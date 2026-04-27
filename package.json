@@ -1,0 +1,8 @@
+{
+  "name": "escape-queue-bare",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "echo no build"
+  },
+  "engines": { "node": ">=18" }
+}

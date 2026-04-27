@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Escape Room Queue</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <h1>Escape Room – Queue</h1>
+  <hr>
+
+  <!-- STEP 1: No token yet — show scanner -->
+  <div id="screen-scan">
+    <h2>Scan the QR code at the booth</h2>
+    <div id="reader" style="width:300px"></div>
+    <p id="scan-error" style="color:red"></p>
+  </div>
+
+  <!-- STEP 2: Token found, not yet joined -->
+  <div id="screen-join" style="display:none">
+    <h2>QR code scanned</h2>
+    <p id="token-status"></p>
+    <div id="join-input-area" style="display:none">
+      <input type="text" id="user-name" placeholder="Enter your name" style="padding:8px; margin-bottom:10px; width:200px" />
+      <br>
+      <button id="join-btn" onclick="joinQueue()">Join the Queue</button>
+    </div>
+    <p id="join-error" style="color:red"></p>
+  </div>
+
+  <!-- STEP 3: In queue, waiting -->
+  <div id="screen-wait" style="display:none">
+    <h2>You are in the queue</h2>
+    <p>Your name: <strong id="my-label"></strong></p>
+    <p>Position: <strong id="my-position"></strong></p>
+    <p>People ahead: <strong id="people-ahead"></strong></p>
+    <p>Status: <strong id="my-status"></strong></p>
+    <button onclick="leaveQueue()">Leave Queue</button>
+  </div>
+
+  <!-- STEP 4: Notified — it's your turn -->
+  <div id="screen-notified" style="display:none">
+    <h2>IT IS YOUR TURN</h2>
+    <p>Head to the escape room booth now.</p>
+    <p>Time remaining: <strong id="time-remaining"></strong></p>
+  </div>
+
+  <!-- STEP 5: Expired -->
+  <div id="screen-expired" style="display:none">
+    <h2>Your window expired</h2>
+    <p>You did not arrive in time. Scan the QR code to rejoin.</p>
+    <button onclick="resetAll()">Start over</button>
+  </div>
+
+  <script>
+    const TWO_MIN = 2 * 60 * 1000;
+    const TEN_MIN = 10 * 60 * 1000;
+    const POLL_MS = 3000;
+
+    let myId = localStorage.getItem("q_id");
+    let myLabel = localStorage.getItem("q_label");
+    let notifiedAt = null;
+    let lastStatus = null;
+    let pollTimer = null;
+    let countdownTimer = null;
+    let scanner = null;
+
+    // --- SCREEN MANAGEMENT ---
+    function show(id) {
+      ["screen-scan","screen-join","screen-wait","screen-notified","screen-expired"]
+        .forEach(s => document.getElementById(s).style.display = s === id ? "block" : "none");
+    }
+
+    // --- NOTIFICATIONS ---
+    async function requestNotifPermission() {
+      if ("Notification" in window && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+    }
+
+    function notify(title, body) {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    }
+
+    // --- QR SCANNER ---
+    function startScanner() {
+      scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
+      scanner.render(onScanSuccess, onScanError);
+    }
+
+    function onScanSuccess(decodedText) {
+      scanner.clear();
+      // decodedText is a full URL like: https://yoursite.com/?t=TOKEN
+      try {
+        const url = new URL(decodedText);
+        const token = url.searchParams.get("t");
+        if (token) {
+          handleToken(token);
+        } else {
+          document.getElementById("scan-error").textContent = "QR code does not contain a valid token.";
+          startScanner();
+        }
+      } catch {
+        // Maybe it was scanned as just the token string directly
+        handleToken(decodedText);
+      }
+    }
+
+    function onScanError() { /* ignore per-frame errors */ }
+
+    // --- TOKEN HANDLING ---
+    function handleToken(token) {
+      show("screen-join");
+      let tokenTime;
+      try {
+        tokenTime = parseInt(atob(token), 10);
+        if (isNaN(tokenTime)) throw new Error();
+      } catch {
+        document.getElementById("token-status").textContent = "Invalid QR code.";
+        return;
+      }
+
+      const age = Date.now() - tokenTime;
+      if (age > TWO_MIN) {
+        document.getElementById("token-status").textContent =
+          `QR code expired ${Math.floor(age / 1000)}s ago. Ask the booth to regenerate it.`;
+        return;
+      }
+
+      const secsLeft = Math.floor((TWO_MIN - age) / 1000);
+      document.getElementById("token-status").textContent =
+        `Valid QR code. ${secsLeft}s remaining to join.`;
+
+      document.getElementById("join-input-area").style.display = "block";
+      const btn = document.getElementById("join-btn");
+      btn.dataset.token = token;
+    }
+
+    // --- JOIN ---
+    async function joinQueue() {
+      const token = document.getElementById("join-btn").dataset.token;
+      const name = document.getElementById("user-name").value;
+      
+      if (!name || !name.trim()) {
+        document.getElementById("join-error").textContent = "Please enter your name.";
+        return;
+      }
+      document.getElementById("join-error").textContent = ""; // clear error
+
+      const res = await fetch("/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, name }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        document.getElementById("join-error").textContent = data.error || "Could not join.";
+        return;
+      }
+
+      myId = data.id;
+      myLabel = data.label;
+      localStorage.setItem("q_id", myId);
+      localStorage.setItem("q_label", myLabel);
+
+      await requestNotifPermission();
+
+      if (data.status === "notified") {
+        notifiedAt = data.notifiedAt;
+        handleNotified();
+      } else {
+        show("screen-wait");
+        updateWaitScreen(data.position, data.total, data.status);
+        startPolling();
+      }
+    }
+
+    // --- POLLING ---
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(poll, POLL_MS);
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    async function poll() {
+      if (!myId) return;
+      try {
+        const res = await fetch(`/api/status?id=${myId}&t=${Date.now()}`, { cache: "no-store" });
+        if (res.status === 404) { resetAll(); return; }
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const prevStatus = lastStatus;
+        lastStatus = data.status;
+
+        if (data.status === "notified" && prevStatus !== "notified") {
+          notify("It's your turn!", "Head to the escape room booth now. You have 10 minutes.");
+        }
+
+        if (data.status === "notified") {
+          notifiedAt = data.notifiedAt;
+          stopPolling();
+          if (data.expired) { handleExpired(); } else { handleNotified(); }
+        } else {
+          show("screen-wait");
+          updateWaitScreen(data.position, data.total, data.status);
+        }
+      } catch (_) {}
+    }
+
+    function updateWaitScreen(position, total, status) {
+      document.getElementById("my-label").textContent = myLabel;
+      document.getElementById("my-position").textContent =
+        position === 1 ? "1st (next up!)" :
+        position === 2 ? "2nd" :
+        position === 3 ? "3rd" :
+        `${position}th`;
+      document.getElementById("people-ahead").textContent = position - 1;
+      document.getElementById("my-status").textContent = status;
+    }
+
+    // --- NOTIFIED ---
+    function handleNotified() {
+      show("screen-notified");
+      if (countdownTimer) clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => {
+        const remaining = Math.max(0, TEN_MIN - (Date.now() - notifiedAt));
+        const m = Math.floor(remaining / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        document.getElementById("time-remaining").textContent =
+          `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+        if (remaining === 0) { clearInterval(countdownTimer); handleExpired(); }
+      }, 1000);
+    }
+
+    // --- EXPIRED ---
+    function handleExpired() {
+      show("screen-expired");
+      localStorage.removeItem("q_id");
+      localStorage.removeItem("q_label");
+    }
+
+    // --- LEAVE ---
+    async function leaveQueue() {
+      if (!myId) return;
+      await fetch(`/api/leave?id=${myId}`, { method: "POST" }).catch(() => {});
+      resetAll();
+    }
+
+    // --- RESET ---
+    function resetAll() {
+      stopPolling();
+      if (countdownTimer) clearInterval(countdownTimer);
+      localStorage.removeItem("q_id");
+      localStorage.removeItem("q_label");
+      myId = null; myLabel = null; lastStatus = null; notifiedAt = null;
+      show("screen-scan");
+      startScanner();
+    }
+
+    // --- INIT ---
+    function init() {
+      // Check URL for token (user arrived via QR scan)
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("t");
+
+      if (token) {
+        // Remove token from URL bar without reloading
+        window.history.replaceState({}, "", "/");
+        handleToken(token);
+        return;
+      }
+
+      // Check localStorage for existing session
+      if (myId) {
+        show("screen-wait");
+        document.getElementById("my-label").textContent = myLabel;
+        requestNotifPermission();
+        startPolling();
+        return;
+      }
+
+      // Fresh visit — show scanner
+      show("screen-scan");
+      startScanner();
+    }
+
+    init();
+  </script>
+</body>
+</html>

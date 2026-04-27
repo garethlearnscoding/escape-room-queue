@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin – Escape Room Queue</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+  <h1>Escape Room – Booth Admin</h1>
+  <hr>
+
+  <h2>QR Code</h2>
+  <p>Each QR expires after 2 minutes. Regenerate if needed.</p>
+  <button onclick="generateQR()">Generate / Refresh QR</button>
+  <p id="qr-status"></p>
+  <div id="qr-box"></div>
+  <p id="qr-expires"></p>
+
+  <hr>
+
+  <h2>Queue</h2>
+  <p>Served today: <strong id="served-count">0</strong></p>
+  <p>Currently waiting: <strong id="queue-count">0</strong></p>
+  <button onclick="clickNext()" id="next-btn">SERVE NEXT</button>
+  <p id="next-result"></p>
+
+  <h3>Queue list</h3>
+  <ol id="queue-list"><li>Loading...</li></ol>
+
+  <script>
+    const BASE = window.location.origin;
+    let qrInstance = null;
+    let qrExpiresAt = null;
+    let expiryInterval = null;
+
+    async function generateQR() {
+      const res = await fetch("/api/token");
+      const { token, generatedAt } = await res.json();
+      qrExpiresAt = generatedAt + 2 * 60 * 1000;
+
+      // Build the URL the QR will encode — user page with token as param
+      const url = `${BASE}/?t=${encodeURIComponent(token)}`;
+
+      const box = document.getElementById("qr-box");
+      box.innerHTML = "";
+
+      qrInstance = new QRCode(box, {
+        text: url,
+        width: 256,
+        height: 256,
+      });
+
+      document.getElementById("qr-status").textContent = `Generated at ${new Date(generatedAt).toLocaleTimeString()}`;
+
+      // Countdown to expiry
+      if (expiryInterval) clearInterval(expiryInterval);
+      expiryInterval = setInterval(() => {
+        const remaining = Math.max(0, qrExpiresAt - Date.now());
+        const secs = Math.ceil(remaining / 1000);
+        document.getElementById("qr-expires").textContent =
+          remaining > 0 ? `Expires in ${secs}s` : "EXPIRED — regenerate now";
+        if (remaining === 0) clearInterval(expiryInterval);
+      }, 500);
+    }
+
+    async function clickNext() {
+      const btn = document.getElementById("next-btn");
+      btn.disabled = true;
+      const res = await fetch("/api/next", { method: "POST" });
+      const data = await res.json();
+      document.getElementById("next-result").textContent =
+        data.served ? `Served: ${data.served}. Next up: ${data.next || "nobody"}` : data.message;
+      btn.disabled = false;
+      loadQueue();
+    }
+
+    async function loadQueue() {
+      const res = await fetch("/api/queue");
+      const data = await res.json();
+      document.getElementById("served-count").textContent = data.served;
+      document.getElementById("queue-count").textContent = data.total;
+
+      const list = document.getElementById("queue-list");
+      if (data.queue.length === 0) {
+        list.innerHTML = "<li>Queue is empty</li>";
+        return;
+      }
+
+      list.innerHTML = data.queue.map(e => {
+        const tag = e.status === "notified"
+          ? ` [NOTIFIED - ${e.timeRemainingMs != null ? Math.ceil((e.timeRemainingMs||0)/1000)+"s left" : ""}]`
+          : " [waiting]";
+        return `<li>${e.label}${tag}</li>`;
+      }).join("");
+    }
+
+    // Auto refresh queue every 3s
+    loadQueue();
+    setInterval(loadQueue, 3000);
+  </script>
+</body>
+</html>
