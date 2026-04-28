@@ -2,101 +2,755 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Admin – Escape Room Queue</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queue Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-</head>
-<body>
-  <h1>Escape Room – Booth Admin</h1>
-  <hr>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  <h2>QR Code</h2>
-  <p>Each QR expires after 2 minutes. Regenerate if needed.</p>
-  <button onclick="generateQR()">Generate / Refresh QR</button>
-  <p id="qr-status"></p>
-  <div id="qr-box"></div>
-  <p id="qr-expires"></p>
-
-  <hr>
-
-  <h2>Queue</h2>
-  <p>Served today: <strong id="served-count">0</strong></p>
-  <p>Currently waiting: <strong id="queue-count">0</strong></p>
-  <button onclick="clickNext()" id="next-btn">SERVE NEXT</button>
-  <p id="next-result"></p>
-
-  <h3>Queue list</h3>
-  <ol id="queue-list"><li>Loading...</li></ol>
-
-  <script>
-    const BASE = window.location.origin;
-    let qrInstance = null;
-    let qrExpiresAt = null;
-    let expiryInterval = null;
-
-    async function generateQR() {
-      const res = await fetch("/api/token");
-      const { token, generatedAt } = await res.json();
-      qrExpiresAt = generatedAt + 2 * 60 * 1000;
-
-      // Build the URL the QR will encode — user page with token as param
-      const url = `${BASE}/?t=${encodeURIComponent(token)}`;
-
-      const box = document.getElementById("qr-box");
-      box.innerHTML = "";
-
-      qrInstance = new QRCode(box, {
-        text: url,
-        width: 256,
-        height: 256,
-      });
-
-      document.getElementById("qr-status").textContent = `Generated at ${new Date(generatedAt).toLocaleTimeString()}`;
-
-      // Countdown to expiry
-      if (expiryInterval) clearInterval(expiryInterval);
-      expiryInterval = setInterval(() => {
-        const remaining = Math.max(0, qrExpiresAt - Date.now());
-        const secs = Math.ceil(remaining / 1000);
-        document.getElementById("qr-expires").textContent =
-          remaining > 0 ? `Expires in ${secs}s` : "EXPIRED — regenerate now";
-        if (remaining === 0) clearInterval(expiryInterval);
-      }, 500);
+    :root {
+      --bg: #f5f5f3;
+      --surface: #ffffff;
+      --border: #e0e0e0;
+      --border-dark: #c0c0c0;
+      --text: #1a1a1a;
+      --text-muted: #888;
+      --accent: #1a1a1a;
+      --green: #1a6b3c;
+      --green-bg: #edf7f2;
+      --red: #b91c1c;
+      --red-bg: #fef2f2;
+      --amber: #92400e;
+      --amber-bg: #fffbeb;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
     }
 
-    async function clickNext() {
-      const btn = document.getElementById("next-btn");
-      btn.disabled = true;
-      const res = await fetch("/api/next", { method: "POST" });
-      const data = await res.json();
-      document.getElementById("next-result").textContent =
-        data.served ? `Served: ${data.served}. Next up: ${data.next || "nobody"}` : data.message;
-      btn.disabled = false;
-      loadQueue();
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
     }
 
-    async function loadQueue() {
-      const res = await fetch("/api/queue");
-      const data = await res.json();
-      document.getElementById("served-count").textContent = data.served;
-      document.getElementById("queue-count").textContent = data.total;
+    /* ── LOGIN ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
 
-      const list = document.getElementById("queue-list");
-      if (data.queue.length === 0) {
-        list.innerHTML = "<li>Queue is empty</li>";
-        return;
+    .login-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      width: 360px;
+      padding: 40px;
+    }
+
+    .login-box h1 {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    .login-box h1 span {
+      display: block;
+      font-size: 22px;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      text-transform: none;
+      font-family: var(--sans);
+      font-weight: 600;
+      margin-top: 6px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-family: var(--mono);
+    }
+
+    .field input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-dark);
+      background: var(--bg);
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .field input:focus {
+      border-color: var(--text);
+    }
+
+    #login-error {
+      font-size: 12px;
+      color: var(--red);
+      margin-bottom: 14px;
+      min-height: 16px;
+      font-family: var(--mono);
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 11px;
+      border: 1px solid var(--text);
+      background: var(--text);
+      color: #fff;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .btn:hover { background: #333; border-color: #333; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+    }
+
+    .btn-outline:hover { background: var(--text); color: #fff; }
+
+    .btn-danger {
+      background: var(--red);
+      border-color: var(--red);
+    }
+
+    .btn-danger:hover { background: #991b1b; border-color: #991b1b; }
+
+    /* ── APP SHELL ── */
+    #app-screen { display: none; min-height: 100vh; flex-direction: column; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header .title {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    header .title span {
+      color: var(--text);
+    }
+
+    header .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .logout-btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 0;
+      border-bottom: 1px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .logout-btn:hover { color: var(--text); border-color: var(--text); }
+
+    /* ── MAIN GRID ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+    }
+
+    /* ── STAT BAR ── */
+    .stat-bar {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat {
+      padding: 20px 28px;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 28px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* ── LEFT PANEL ── */
+    .panel-left {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-section {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* QR section */
+    #qr-box {
+      margin-bottom: 14px;
+      line-height: 0;
+    }
+
+    #qr-box img, #qr-box canvas {
+      border: 1px solid var(--border);
+    }
+
+    .qr-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    #qr-expires {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    #qr-expires.urgent { color: var(--red); font-weight: 500; }
+
+    /* Next button section */
+    #serve-result {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      min-height: 16px;
+    }
+
+    /* ── RIGHT PANEL — QUEUE TABLE ── */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .table-header {
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .table-header .panel-label { margin-bottom: 0; }
+
+    #last-updated {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .queue-table {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      padding: 10px 28px;
+      text-align: left;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover { background: var(--bg); }
+
+    tbody tr.row-notified { background: var(--green-bg); }
+    tbody tr.row-notified:hover { background: #ddf0e8; }
+    tbody tr.row-expired { background: var(--red-bg); }
+    tbody tr.row-expired:hover { background: #fee2e2; }
+
+    tbody td {
+      padding: 13px 28px;
+      font-size: 13px;
+      vertical-align: middle;
+    }
+
+    .td-pos {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      width: 48px;
+    }
+
+    .td-name {
+      font-weight: 500;
+    }
+
+    .td-time {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .td-countdown {
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .td-countdown.urgent { color: var(--red); font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      border: 1px solid;
+    }
+
+    .badge-waiting {
+      color: var(--amber);
+      border-color: #f59e0b;
+      background: var(--amber-bg);
+    }
+
+    .badge-notified {
+      color: var(--green);
+      border-color: #16a34a;
+      background: var(--green-bg);
+    }
+
+    .badge-expired {
+      color: var(--red);
+      border-color: var(--red);
+      background: var(--red-bg);
+    }
+
+    .empty-row td {
+      padding: 48px 28px;
+      text-align: center;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    /* iPad adaptations */
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 1fr;
       }
 
-      list.innerHTML = data.queue.map(e => {
-        const tag = e.status === "notified"
-          ? ` [NOTIFIED - ${e.timeRemainingMs != null ? Math.ceil((e.timeRemainingMs||0)/1000)+"s left" : ""}]`
-          : " [waiting]";
-        return `<li>${e.label}${tag}</li>`;
-      }).join("");
+      .stat-bar {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .stat:nth-child(2) { border-right: none; }
+      .stat:nth-child(3) { border-top: 1px solid var(--border); }
+      .stat:nth-child(4) { border-top: 1px solid var(--border); border-right: none; }
+
+      .panel-left { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>Escape Room<span>Booth Admin</span></h1>
+    <div class="field">
+      <label>Username</label>
+      <input id="username" type="text" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="password" type="password" autocomplete="current-password" />
+    </div>
+    <div id="login-error"></div>
+    <button class="btn" onclick="login()">Sign in</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen">
+  <header>
+    <div class="title">Escape Room &mdash; <span>Queue Control</span></div>
+    <div class="header-right">
+      <div class="live-indicator">
+        <div class="live-dot"></div>
+        Live
+      </div>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- STAT BAR -->
+    <div class="stat-bar">
+      <div class="stat">
+        <div class="stat-value" id="stat-waiting">0</div>
+        <div class="stat-label">Waiting</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-notified">0</div>
+        <div class="stat-label">Notified</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-served">0</div>
+        <div class="stat-label">Served today</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total passed through</div>
+      </div>
+    </div>
+
+    <!-- LEFT PANEL -->
+    <div class="panel-left">
+
+      <!-- QR -->
+      <div class="panel-section">
+        <div class="panel-label">QR Code</div>
+        <div id="qr-box"></div>
+        <div class="qr-meta" id="qr-generated">Not generated yet</div>
+        <div id="qr-expires"></div>
+        <button class="btn btn-outline" onclick="generateQR()">Generate new QR</button>
+      </div>
+
+      <!-- QUEUE CONTROL -->
+      <div class="panel-section">
+        <div class="panel-label">Queue Control</div>
+        <button class="btn" style="margin-bottom: 10px;" id="serve-btn" onclick="serveFirst()">Serve (Arrived)</button>
+        <button class="btn btn-outline" style="margin-bottom: 10px;" id="call-btn" onclick="callFirst()">Call to Booth</button>
+        <button class="btn btn-danger" id="noshow-btn" onclick="noShow()">No Show (Remove)</button>
+        <div id="action-result" style="font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 12px; min-height: 16px;"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="panel-right">
+      <div class="table-header">
+        <div class="panel-label">Current queue</div>
+        <div id="last-updated"></div>
+      </div>
+      <div class="queue-table">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Joined</th>
+              <th>Window</th>
+            </tr>
+          </thead>
+          <tbody id="queue-body">
+            <tr class="empty-row"><td colspan="5">No one in queue</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────────
+  const API = "http://localhost:3000"; // change to Vercel URL in production
+  const VALID_USER = "jh207";
+  const VALID_PASS = "password123";
+  const NOTIFY_WINDOW = 5 * 60 * 1000;
+  const GITHUB_PAGES_URL = "https://broken-toaster.seagull-hippocampus.ts.net/map"; // update this
+
+  let refreshTimer = null;
+  let expiryTimer = null;
+  let authed = sessionStorage.getItem("admin_auth") === "1";
+
+  // ── AUTH ─────────────────────────────────────────────────────
+  function login() {
+    const u = document.getElementById("username").value.trim();
+    const p = document.getElementById("password").value;
+    if (u === VALID_USER && p === VALID_PASS) {
+      sessionStorage.setItem("admin_auth", "1");
+      authed = true;
+      showApp();
+    } else {
+      document.getElementById("login-error").textContent = "Incorrect username or password.";
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem("admin_auth");
+    authed = false;
+    clearInterval(refreshTimer);
+    document.getElementById("app-screen").style.display = "none";
+    document.getElementById("login-screen").style.display = "flex";
+  }
+
+  document.getElementById("password").addEventListener("keydown", e => {
+    if (e.key === "Enter") login();
+  });
+
+  // ── INIT ─────────────────────────────────────────────────────
+  function showApp() {
+    document.getElementById("login-screen").style.display = "none";
+    document.getElementById("app-screen").style.display = "flex";
+    loadQueue();
+    refreshTimer = setInterval(loadQueue, 4000);
+  }
+
+  if (authed) showApp();
+
+  // ── QR ───────────────────────────────────────────────────────
+  async function generateQR() {
+    const res = await fetch(`${API}/api/token`);
+    const { token, generatedAt, expiresAt } = await res.json();
+
+    const qrUrl = `${GITHUB_PAGES_URL}?t=${encodeURIComponent(token)}`;
+
+    const box = document.getElementById("qr-box");
+    box.innerHTML = "";
+    new QRCode(box, { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+
+    document.getElementById("qr-generated").textContent =
+      "Generated " + new Date(generatedAt).toLocaleTimeString();
+
+    if (expiryTimer) clearInterval(expiryTimer);
+    expiryTimer = setInterval(() => {
+      const remaining = Math.max(0, expiresAt - Date.now());
+      const secs = Math.ceil(remaining / 1000);
+      const el = document.getElementById("qr-expires");
+      el.textContent = remaining > 0 ? `Expires in ${secs}s` : "Expired — generate a new one";
+      el.className = remaining < 30000 ? "urgent" : "";
+      if (remaining === 0) clearInterval(expiryTimer);
+    }, 500);
+  }
+
+  // ── QUEUE ACTIONS ───────────────────────────────────────────
+  async function serveFirst() {
+    const btn = document.getElementById("serve-btn");
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/serve`, { method: "POST" });
+      const data = await res.json();
+      const el = document.getElementById("action-result");
+      if (data.served) {
+        el.textContent = `Served: ${data.served}`;
+      } else {
+        el.textContent = data.message || "Queue empty";
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    btn.disabled = false;
+    loadQueue();
+  }
+
+  async function callFirst() {
+    const btn = document.getElementById("call-btn");
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/call`, { method: "POST" });
+      const data = await res.json();
+      const el = document.getElementById("action-result");
+      if (data.called) {
+        el.textContent = `Called: ${data.called}`;
+      } else {
+        el.textContent = data.message || "Queue empty";
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    btn.disabled = false;
+    loadQueue();
+  }
+
+  async function noShow() {
+    if (!confirm("Remove the first person in queue?")) return;
+    const btn = document.getElementById("noshow-btn");
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/noshow`, { method: "POST" });
+      const data = await res.json();
+      const el = document.getElementById("action-result");
+      if (data.removed) {
+        el.textContent = `Removed: ${data.removed}`;
+      } else {
+        el.textContent = data.message || "Queue empty";
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    btn.disabled = false;
+    loadQueue();
+  }
+
+  // ── QUEUE ────────────────────────────────────────────────────
+  async function loadQueue() {
+    let data;
+    try {
+      const res = await fetch(`${API}/api/queue`);
+      data = await res.json();
+    } catch {
+      return;
     }
 
-    // Auto refresh queue every 3s
-    loadQueue();
-    setInterval(loadQueue, 3000);
-  </script>
+    const now = Date.now();
+    const { queue, total, served } = data;
+
+    const waiting = queue.filter(e => e.status === "waiting").length;
+    const notified = queue.filter(e => e.status === "notified" && !e.expired).length;
+
+    document.getElementById("stat-waiting").textContent = waiting;
+    document.getElementById("stat-notified").textContent = notified;
+    document.getElementById("stat-served").textContent = served;
+    document.getElementById("stat-total").textContent = served + total;
+    document.getElementById("last-updated").textContent =
+      "Updated " + new Date().toLocaleTimeString();
+
+    const tbody = document.getElementById("queue-body");
+
+    if (queue.length === 0) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No one in queue</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = queue.map(e => {
+      const rowClass = e.expired ? "row-expired" : e.status === "notified" ? "row-notified" : "";
+      const badge = e.expired
+        ? `<span class="badge badge-expired">Expired</span>`
+        : e.status === "notified"
+        ? `<span class="badge badge-notified">Notified</span>`
+        : `<span class="badge badge-waiting">Waiting</span>`;
+
+      let countdown = "—";
+      let countdownClass = "td-countdown";
+      if (e.status === "notified" && e.notifiedAt) {
+        const rem = Math.max(0, NOTIFY_WINDOW - (now - e.notifiedAt));
+        const m = String(Math.floor(rem / 60000)).padStart(2, "0");
+        const s = String(Math.floor((rem % 60000) / 1000)).padStart(2, "0");
+        countdown = rem > 0 ? `${m}:${s}` : "00:00";
+        if (rem < 120000) countdownClass += " urgent";
+      }
+
+      const joined = new Date(e.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      return `
+        <tr class="${rowClass}">
+          <td class="td-pos">${e.position}</td>
+          <td class="td-name">${e.label}</td>
+          <td>${badge}</td>
+          <td class="td-time">${joined}</td>
+          <td class="${countdownClass}">${countdown}</td>
+        </tr>`;
+    }).join("");
+  }
+</script>
 </body>
 </html>

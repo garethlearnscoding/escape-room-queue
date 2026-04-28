@@ -1,7 +1,11 @@
-module.exports = (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  if (req.method !== "GET") return res.status(405).end();
+const { setCors, handleOptions } = require("./_cors");
 
-  const token = Buffer.from(Date.now().toString()).toString("base64");
-  return res.status(200).json({ token, generatedAt: Date.now() });
+module.exports = (req, res) => {
+  setCors(res, req);
+  if (handleOptions(req, res)) return;
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const now = Date.now();
+  const token = Buffer.from(now.toString()).toString("base64");
+  return res.status(200).json({ token, generatedAt: now, expiresAt: now + 2 * 60 * 1000 });
 };

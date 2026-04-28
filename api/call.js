@@ -9,22 +9,17 @@ module.exports = async (req, res) => {
   const data = await read();
 
   if (data.queue.length === 0) {
-    return res.status(200).json({ message: "Queue empty", served: null, next: null, remaining: 0 });
+    return res.status(200).json({ message: "Queue empty" });
   }
 
-  const served = data.queue.shift();
-  data.served += 1;
-
-  if (data.queue.length > 0) {
-    data.queue[0].status = "notified";
-    data.queue[0].notifiedAt = Date.now();
-  }
+  // Notify the first person in line
+  data.queue[0].status = "notified";
+  data.queue[0].notifiedAt = Date.now();
 
   await save(data);
 
   return res.status(200).json({
-    served: served.label,
-    next: data.queue[0]?.label || null,
-    remaining: data.queue.length,
+    called: data.queue[0].label,
+    status: "notified"
   });
 };
