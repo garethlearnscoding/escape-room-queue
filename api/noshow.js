@@ -7,13 +7,22 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const data = await read();
+  const { id } = req.body || {};
 
   if (data.queue.length === 0) {
     return res.status(200).json({ message: "Queue empty" });
   }
 
-  // Remove the first person without incrementing served count
-  const removed = data.queue.shift();
+  let index = 0;
+  if (id) {
+    index = data.queue.findIndex(e => e.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "User not found in queue" });
+    }
+  }
+
+  // Remove the person without incrementing served count
+  const removed = data.queue.splice(index, 1)[0];
 
   await save(data);
 

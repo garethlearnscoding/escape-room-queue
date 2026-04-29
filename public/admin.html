@@ -143,6 +143,20 @@
 
     .btn-danger:hover { background: #991b1b; border-color: #991b1b; }
 
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 10px;
+      width: auto;
+      display: inline-block;
+      margin-left: 4px;
+    }
+
+    .btn-large {
+      padding: 20px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
     /* ── APP SHELL ── */
     #app-screen { display: none; min-height: 100vh; flex-direction: column; }
 
@@ -274,17 +288,118 @@
       text-transform: uppercase;
       color: var(--text-muted);
       margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     /* QR section */
-    #qr-box {
+    #qr-container {
+      position: relative;
+      width: 220px;
       margin-bottom: 14px;
+    }
+
+    #qr-box {
       line-height: 0;
     }
 
     #qr-box img, #qr-box canvas {
       border: 1px solid var(--border);
+      transition: filter 0.3s, opacity 0.3s;
     }
+
+    #qr-box.expired img, #qr-box.expired canvas {
+      filter: grayscale(1) blur(2px);
+      opacity: 0.15;
+    }
+
+    #qr-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+      pointer-events: none;
+    }
+
+    #qr-box.expired + #qr-overlay {
+      display: flex;
+    }
+
+    .expired-text {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--red);
+      opacity: 0.6;
+      line-height: 1.4;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* FULLSCREEN MODAL */
+    #qr-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #fff;
+      z-index: 1000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #qr-modal.active { display: flex; }
+
+    #qr-modal-close {
+      position: absolute;
+      top: 40px; right: 40px;
+      background: none; border: none;
+      font-family: var(--mono);
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #qr-modal-content {
+      transform: scale(2.5);
+    }
+    
+    #qr-modal-content.expired {
+        filter: grayscale(1) blur(2px);
+        opacity: 0.15;
+    }
+
+    #qr-modal-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      pointer-events: none;
+    }
+    
+    #qr-modal-content.expired + #qr-modal-overlay {
+        display: flex;
+    }
+
+    .btn-icon {
+      padding: 4px 8px;
+      font-size: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      cursor: pointer;
+      font-family: var(--mono);
+      text-transform: uppercase;
+    }
+
+    .btn-icon:hover { background: var(--border); }
 
     .qr-meta {
       font-family: var(--mono);
@@ -516,8 +631,16 @@
 
       <!-- QR -->
       <div class="panel-section">
-        <div class="panel-label">QR Code</div>
-        <div id="qr-box"></div>
+        <div class="panel-label">
+          QR Code
+          <button class="btn-icon" onclick="toggleQRFullscreen()">Full Screen</button>
+        </div>
+        <div id="qr-container">
+          <div id="qr-box"></div>
+          <div id="qr-overlay">
+            <div class="expired-text" style="color: #ef4444; opacity: 1;">Expired<br>Generate New QR  </div>
+          </div>
+        </div>
         <div class="qr-meta" id="qr-generated">Not generated yet</div>
         <div id="qr-expires"></div>
         <button class="btn btn-outline" onclick="generateQR()">Generate new QR</button>
@@ -526,9 +649,7 @@
       <!-- QUEUE CONTROL -->
       <div class="panel-section">
         <div class="panel-label">Queue Control</div>
-        <button class="btn" style="margin-bottom: 10px;" id="serve-btn" onclick="serveFirst()">Serve (Arrived)</button>
-        <button class="btn btn-outline" style="margin-bottom: 10px;" id="call-btn" onclick="callFirst()">Call to Booth</button>
-        <button class="btn btn-danger" id="noshow-btn" onclick="noShow()">No Show (Remove)</button>
+        <button class="btn btn-large" id="call-btn" onclick="callFirst()">Call to Booth</button>
         <div id="action-result" style="font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 12px; min-height: 16px;"></div>
       </div>
 
@@ -549,15 +670,27 @@
               <th>Status</th>
               <th>Joined</th>
               <th>Window</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="queue-body">
-            <tr class="empty-row"><td colspan="5">No one in queue</td></tr>
+            <tr class="empty-row"><td colspan="6">No one in queue</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </main>
+</div>
+
+<!-- FULLSCREEN QR -->
+<div id="qr-modal">
+  <button id="qr-modal-close" onclick="toggleQRFullscreen()">Close</button>
+  <div style="position: relative;">
+    <div id="qr-modal-content"></div>
+    <div id="qr-modal-overlay">
+      <div class="expired-text" style="color: #ef4444; opacity: 1; font-size: 24px;">Expired<br>Generate New</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -570,6 +703,7 @@
 
   let refreshTimer = null;
   let expiryTimer = null;
+  let currentToken = null;
   let authed = sessionStorage.getItem("admin_auth") === "1";
 
   // ── AUTH ─────────────────────────────────────────────────────
@@ -611,12 +745,26 @@
   async function generateQR() {
     const res = await fetch(`${API}/api/token`);
     const { token, generatedAt, expiresAt } = await res.json();
+    currentToken = token;
 
     const qrUrl = `${GITHUB_PAGES_URL}?t=${encodeURIComponent(token)}`;
 
     const box = document.getElementById("qr-box");
     box.innerHTML = "";
-    new QRCode(box, { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+    box.classList.remove("expired");
+    
+    const modalBox = document.getElementById("qr-modal-content");
+    modalBox.innerHTML = "";
+    modalBox.classList.remove("expired");
+
+    const texts = document.querySelectorAll(".expired-text");
+    texts.forEach(el => {
+      el.innerHTML = "Expired<br>Generate New";
+    });
+
+    const options = { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H };
+    new QRCode(box, options);
+    new QRCode(modalBox, options);
 
     document.getElementById("qr-generated").textContent =
       "Generated " + new Date(generatedAt).toLocaleTimeString();
@@ -626,29 +774,64 @@
       const remaining = Math.max(0, expiresAt - Date.now());
       const secs = Math.ceil(remaining / 1000);
       const el = document.getElementById("qr-expires");
-      el.textContent = remaining > 0 ? `Expires in ${secs}s` : "Expired — generate a new one";
+      
+      // Don't show expiry if already used
+      if (document.getElementById("qr-box").classList.contains("expired")) {
+        // If it's expired due to use, we might want to stop the timer
+        // but loadQueue also sets this class. 
+        // Better to just not update text if it's already in an 'expired' state.
+        if (!el.textContent.includes("Expires")) return; 
+      }
+
+      el.textContent = remaining > 0 ? `Expires in ${secs}s` : "";
       el.className = remaining < 30000 ? "urgent" : "";
-      if (remaining === 0) clearInterval(expiryTimer);
+      
+      if (remaining === 0) {
+        document.getElementById("qr-box").classList.add("expired");
+        document.getElementById("qr-modal-content").classList.add("expired");
+        
+        const texts = document.querySelectorAll(".expired-text");
+        texts.forEach(el => {
+          el.innerHTML = "Expired<br>Generate New";
+        });
+
+        clearInterval(expiryTimer);
+      }
     }, 500);
   }
 
+  function toggleQRFullscreen() {
+    const modal = document.getElementById("qr-modal");
+    modal.classList.toggle("active");
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      document.getElementById("qr-modal").classList.remove("active");
+    }
+  });
+
   // ── QUEUE ACTIONS ───────────────────────────────────────────
-  async function serveFirst() {
-    const btn = document.getElementById("serve-btn");
-    btn.disabled = true;
+  async function serveFirst(id = null) {
+    const btn = id ? null : document.getElementById("serve-btn");
+    if (btn) btn.disabled = true;
     try {
-      const res = await fetch(`${API}/api/serve`, { method: "POST" });
+      const res = await fetch(`${API}/api/serve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
       const data = await res.json();
       const el = document.getElementById("action-result");
       if (data.served) {
         el.textContent = `Served: ${data.served}`;
       } else {
-        el.textContent = data.message || "Queue empty";
+        el.textContent = data.error || data.message || "Queue empty";
       }
     } catch (e) {
       console.error(e);
     }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
     loadQueue();
   }
 
@@ -662,7 +845,7 @@
       if (data.called) {
         el.textContent = `Called: ${data.called}`;
       } else {
-        el.textContent = data.message || "Queue empty";
+        el.textContent = data.error || data.message || "Queue empty";
       }
     } catch (e) {
       console.error(e);
@@ -671,23 +854,28 @@
     loadQueue();
   }
 
-  async function noShow() {
-    if (!confirm("Remove the first person in queue?")) return;
-    const btn = document.getElementById("noshow-btn");
-    btn.disabled = true;
+  async function noShow(id = null) {
+    const msg = id ? "Remove this person from the queue?" : "Remove the first person in queue?";
+    if (!confirm(msg)) return;
+    const btn = id ? null : document.getElementById("noshow-btn");
+    if (btn) btn.disabled = true;
     try {
-      const res = await fetch(`${API}/api/noshow`, { method: "POST" });
+      const res = await fetch(`${API}/api/noshow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
       const data = await res.json();
       const el = document.getElementById("action-result");
       if (data.removed) {
         el.textContent = `Removed: ${data.removed}`;
       } else {
-        el.textContent = data.message || "Queue empty";
+        el.textContent = data.error || data.message || "Queue empty";
       }
     } catch (e) {
       console.error(e);
     }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
     loadQueue();
   }
 
@@ -702,7 +890,19 @@
     }
 
     const now = Date.now();
-    const { queue, total, served } = data;
+    const { queue, total, served, usedTokens } = data;
+
+    // Check if current QR is used
+    if (currentToken && usedTokens.some(t => t.token === currentToken)) {
+      document.getElementById("qr-box").classList.add("expired");
+      document.getElementById("qr-modal-content").classList.add("expired");
+      document.getElementById("qr-expires").textContent = "";
+      
+      const texts = document.querySelectorAll(".expired-text");
+      texts.forEach(el => {
+        el.innerHTML = "QR Code already used<br>Generate new QR";
+      });
+    }
 
     const waiting = queue.filter(e => e.status === "waiting").length;
     const notified = queue.filter(e => e.status === "notified" && !e.expired).length;
@@ -714,10 +914,13 @@
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString();
 
+    // Disable Call button if 2 or more notified
+    document.getElementById("call-btn").disabled = notified >= 2;
+
     const tbody = document.getElementById("queue-body");
 
     if (queue.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="5">No one in queue</td></tr>`;
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No one in queue</td></tr>`;
       return;
     }
 
@@ -741,6 +944,14 @@
 
       const joined = new Date(e.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+      let actions = "";
+      if (e.status === "notified") {
+        actions = `
+          <button class="btn btn-small" onclick="serveFirst('${e.id}')">Serve</button>
+          <button class="btn btn-danger btn-small" onclick="noShow('${e.id}')">No Show</button>
+        `;
+      }
+
       return `
         <tr class="${rowClass}">
           <td class="td-pos">${e.position}</td>
@@ -748,6 +959,7 @@
           <td>${badge}</td>
           <td class="td-time">${joined}</td>
           <td class="${countdownClass}">${countdown}</td>
+          <td>${actions}</td>
         </tr>`;
     }).join("");
   }

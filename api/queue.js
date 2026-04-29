@@ -24,5 +24,6 @@ module.exports = async (req, res) => {
     })),
     total: data.queue.length,
     served: data.served,
+    usedTokens: data.usedTokens || [],
   });
 };

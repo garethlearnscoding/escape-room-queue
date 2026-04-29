@@ -42,8 +42,8 @@ module.exports = async (req, res) => {
     id,
     label: name.trim(),
     joinedAt: now,
-    status: data.queue.length === 0 ? "notified" : "waiting",
-    notifiedAt: data.queue.length === 0 ? now : null,
+    status: "waiting",
+    notifiedAt: null,
   };
 
   data.queue.push(entry);

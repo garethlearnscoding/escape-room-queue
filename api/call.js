@@ -7,19 +7,30 @@ module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const data = await read();
+  const WINDOW = 5 * 60 * 1000;
+  const now = Date.now();
 
-  if (data.queue.length === 0) {
-    return res.status(200).json({ message: "Queue empty" });
+  const notifiedCount = data.queue.filter(e => e.status === "notified" && (now - (e.notifiedAt || 0) < WINDOW)).length;
+
+  if (notifiedCount >= 2) {
+    return res.status(400).json({ error: "Already 2 people notified. Serve or remove someone first." });
   }
 
-  // Notify the first person in line
-  data.queue[0].status = "notified";
-  data.queue[0].notifiedAt = Date.now();
+  // Find the first person in line who is "waiting"
+  const nextIndex = data.queue.findIndex(e => e.status === "waiting");
+
+  if (nextIndex === -1) {
+    return res.status(200).json({ message: "No one waiting in queue" });
+  }
+
+  // Notify that person
+  data.queue[nextIndex].status = "notified";
+  data.queue[nextIndex].notifiedAt = now;
 
   await save(data);
 
   return res.status(200).json({
-    called: data.queue[0].label,
+    called: data.queue[nextIndex].label,
     status: "notified"
   });
 };
