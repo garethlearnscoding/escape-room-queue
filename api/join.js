@@ -37,9 +37,14 @@ module.exports = async (req, res) => {
 
   data.usedTokens.push({ token, time: now });
 
+  if (data.totalJoined === undefined) data.totalJoined = (data.served || 0) + data.queue.length;
+  data.totalJoined += 1;
+  const ticketNumber = data.totalJoined;
+
   const id = randomUUID();
   const entry = {
     id,
+    ticketNumber,
     label: name.trim(),
     joinedAt: now,
     status: "waiting",
@@ -53,6 +58,7 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     id,
+    ticketNumber,
     label: entry.label,
     position,
     total: data.queue.length,

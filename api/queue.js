@@ -14,6 +14,7 @@ module.exports = async (req, res) => {
   return res.status(200).json({
     queue: data.queue.map((e, i) => ({
       id: e.id,
+      ticketNumber: e.ticketNumber,
       label: e.label,
       position: i + 1,
       status: e.status,

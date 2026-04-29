@@ -23,6 +23,7 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     id: entry.id,
+    ticketNumber: entry.ticketNumber,
     label: entry.label,
     position: idx + 1,
     total: data.queue.length,
