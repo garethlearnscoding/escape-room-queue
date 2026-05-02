@@ -695,30 +695,55 @@
 </div>
 
 <script>
-  // ── CONFIG ──────────────────────────────────────────────────
-  const API = "http://localhost:3000"; // change to Vercel URL in production
-  // const API = "http://escaperoomqueue.njcfuntasia.com"; // change to Vercel URL in production
-  const VALID_USER = "jh207";
-  const VALID_PASS = "password123";
+  // ── CONFIG (loaded from /api/config on startup) ─────────────
   const NOTIFY_WINDOW = 5 * 60 * 1000;
-  const GITHUB_PAGES_URL = "https://escaperoom.njcfuntasia.com"; // update this
+  let API = "";
+  let GITHUB_PAGES_URL = "";
 
   let refreshTimer = null;
   let expiryTimer = null;
   let currentToken = null;
   let authed = sessionStorage.getItem("admin_auth") === "1";
 
+  // Fetch config from server before anything runs
+  async function loadConfig() {
+    try {
+      const res = await fetch("/api/config");
+      const cfg = await res.json();
+      API = cfg.apiUrl;
+      GITHUB_PAGES_URL = cfg.githubPagesUrl;
+    } catch {
+      // fallback for local dev if /api/config not available
+      API = window.location.origin;
+      GITHUB_PAGES_URL = window.location.origin;
+    }
+  }
+
   // ── AUTH ─────────────────────────────────────────────────────
-  function login() {
+  async function login() {
     const u = document.getElementById("username").value.trim();
     const p = document.getElementById("password").value;
-    if (u === VALID_USER && p === VALID_PASS) {
-      sessionStorage.setItem("admin_auth", "1");
-      authed = true;
-      showApp();
-    } else {
-      document.getElementById("login-error").textContent = "Incorrect username or password.";
+    const btn = document.querySelector("#login-screen .btn");
+    btn.disabled = true;
+    btn.textContent = "Signing in...";
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, password: p }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem("admin_auth", "1");
+        authed = true;
+        showApp();
+      } else {
+        document.getElementById("login-error").textContent = "Incorrect username or password.";
+      }
+    } catch {
+      document.getElementById("login-error").textContent = "Could not reach server.";
     }
+    btn.disabled = false;
+    btn.textContent = "Sign in";
   }
 
   function logout() {
@@ -741,7 +766,11 @@
     refreshTimer = setInterval(loadQueue, 4000);
   }
 
-  if (authed) showApp();
+  // ── STARTUP ───────────────────────────────────────────────────
+  // Always load config first, then show app or login screen
+  loadConfig().then(() => {
+    if (authed) showApp();
+  });
 
   // ── QR ───────────────────────────────────────────────────────
   async function generateQR() {
