@@ -649,7 +649,8 @@
       <!-- QUEUE CONTROL -->
       <div class="panel-section">
         <div class="panel-label">Queue Control</div>
-        <button class="btn btn-large" id="call-btn" onclick="callFirst()">Call to Booth</button>
+        <button class="btn btn-large" id="call-btn" onclick="callFirst()" style="margin-bottom: 12px;">Call to Booth</button>
+        <button class="btn btn-danger" onclick="clearQueue()">Clear Entire Queue</button>
         <div id="action-result" style="font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 12px; min-height: 16px;"></div>
       </div>
 
@@ -696,10 +697,11 @@
 <script>
   // ── CONFIG ──────────────────────────────────────────────────
   const API = "http://localhost:3000"; // change to Vercel URL in production
+  // const API = "http://escaperoomqueue.njcfuntasia.com"; // change to Vercel URL in production
   const VALID_USER = "jh207";
   const VALID_PASS = "password123";
   const NOTIFY_WINDOW = 5 * 60 * 1000;
-  const GITHUB_PAGES_URL = "https://broken-toaster.seagull-hippocampus.ts.net/map"; // update this
+  const GITHUB_PAGES_URL = "https://escaperoom.njcfuntasia.com"; // update this
 
   let refreshTimer = null;
   let expiryTimer = null;
@@ -876,6 +878,53 @@
       console.error(e);
     }
     if (btn) btn.disabled = false;
+    loadQueue();
+  }
+
+  async function clearQueue() {
+    const confirmation = prompt("CRITICAL: This will delete ALL people from the queue and reset served counts. Type 'clear' to confirm:");
+    if (confirmation !== "clear") {
+      if (confirmation !== null) alert("Incorrect confirmation text. Action cancelled.");
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API}/api/clear`, { method: "POST" });
+      const data = await res.json();
+      const el = document.getElementById("action-result");
+      if (data.cleared) {
+        el.textContent = "Queue cleared successfully";
+        currentToken = null;
+        
+        // Stop expiry timer
+        if (expiryTimer) {
+          clearInterval(expiryTimer);
+          expiryTimer = null;
+        }
+
+        // Clean up QR UI
+        const qrBox = document.getElementById("qr-box");
+        const modalQr = document.getElementById("qr-modal-content");
+        
+        if (qrBox) {
+          qrBox.innerHTML = "";
+          qrBox.classList.remove("expired");
+        }
+        if (modalQr) {
+          modalQr.innerHTML = "";
+          modalQr.classList.remove("expired");
+        }
+
+        document.getElementById("qr-generated").textContent = "Not generated yet";
+        document.getElementById("qr-expires").textContent = "";
+        document.getElementById("qr-expires").className = "";
+      } else {
+        el.textContent = data.error || "Failed to clear queue";
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error clearing queue");
+    }
     loadQueue();
   }
 
