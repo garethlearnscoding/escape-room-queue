@@ -139,6 +139,8 @@
   let tokenExpiry = parseInt(sessionStorage.getItem("admin_token_expiry") || "0", 10);
   let refreshTimer = null;
   let expiryTimer = null;
+  let currentToken = null;
+  const NOTIFY_WINDOW = 5 * 60 * 1000;
 
   // ── STARTUP ────────────────────────────────────────────────
   async function init() {
@@ -236,8 +238,10 @@
   async function generateQR() {
     const res = await authFetch("/api/token");
     const { token, generatedAt, expiresAt } = await res.json();
+    currentToken = token;
 
     const qrUrl = `${GITHUB_PAGES_URL}?t=${encodeURIComponent(token)}`;
+    console.log(qrUrl);
     const box = document.getElementById("qr-box");
     box.innerHTML = "";
     new QRCode(box, { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });

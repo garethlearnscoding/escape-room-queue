@@ -17,6 +17,11 @@ module.exports = async (req, res) => {
   }
 
   // Use anon key here — signIn does not need service role
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY in environment");
+    return res.status(500).json({ error: "Server configuration error" });
+  }
+
   const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_ANON_KEY,
