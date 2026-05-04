@@ -1,7 +1,11 @@
-const { db, getActive, updateStatus } = require("./_queue");
-const { setCors, handleOptions } = require("./_cors");
+// POST /api/next  — ADMIN (JWT required)
+// Marks current first person as served, notifies next
 
-module.exports = async (req, res) => {
+const { getActive, updateStatus } = require("./_queue");
+const { setCors, handleOptions } = require("./_cors");
+const { requireAuth } = require("./_auth");
+
+module.exports = requireAuth(async (req, res) => {
   setCors(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -9,15 +13,17 @@ module.exports = async (req, res) => {
   const active = await getActive();
 
   if (active.length === 0) {
-    return res.status(200).json({ message: "Queue empty", served: null, next: null, remaining: 0 });
+    return res.status(200).json({
+      message: "Queue empty",
+      served: null,
+      next: null,
+      remaining: 0,
+    });
   }
 
   const current = active[0];
-
-  // Mark current as served
   await updateStatus(current.queue_number, "served");
 
-  // Notify next person if exists
   let next = null;
   if (active.length > 1) {
     next = active[1];
@@ -31,4 +37,4 @@ module.exports = async (req, res) => {
     nextQueueNumber: next?.queue_number || null,
     remaining: active.length - 1,
   });
-};
+});

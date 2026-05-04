@@ -1,18 +1,36 @@
+// POST /api/auth
+// Admin login — exchanges email/password for a Supabase JWT
+// Frontend stores this JWT and sends it as Bearer on all admin requests
+
+const { createClient } = require("@supabase/supabase-js");
 const { setCors, handleOptions } = require("./_cors");
 
-module.exports = (req, res) => {
-  setCors(res);
+module.exports = async (req, res) => {
+  setCors(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { username, password } = req.body || {};
+  const { email, password } = req.body || {};
 
-  const validUser = process.env.ADMIN_USER || "jh207";
-  const validPass = process.env.ADMIN_PASS || "password123";
-
-  if (username === validUser && password === validPass) {
-    return res.status(200).json({ ok: true });
+  if (!email || !password) {
+    return res.status(400).json({ error: "Missing email or password" });
   }
 
-  return res.status(401).json({ error: "Invalid credentials" });
+  // Use anon key here — signIn does not need service role
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY,
+    { auth: { persistSession: false } }
+  );
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error || !data.session) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  return res.status(200).json({
+    accessToken: data.session.access_token,
+    expiresAt: data.session.expires_at,
+  });
 };

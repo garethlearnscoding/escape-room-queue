@@ -1,40 +1,23 @@
-const { createClient } = require("@supabase/supabase-js");
+const { adminClient } = require("./_supabase");
 
-let _client = null;
+function db() { return adminClient(); }
 
-function db() {
-  if (!_client) {
-    _client = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
-  }
-  return _client;
-}
-
-// Returns all active queue entries (waiting or notified), ordered by queue_number
+// Active = waiting or notified only (excludes served and noshow)
 async function getActive() {
-  const { data, error } = await db()
-    .from("queue")
-    .select("*")
-    .in("status", ["waiting", "notified"])
-    .order("queue_number", { ascending: true });
+  const { data, error } = await db().rpc("get_active_queue");
   if (error) throw error;
   return data || [];
 }
 
-// Returns a single entry by queue_number or id
 async function getEntry(queueNumber) {
-  const { data, error } = await db()
+  const { data } = await db()
     .from("queue")
     .select("*")
     .eq("queue_number", queueNumber)
     .single();
-  if (error) return null;
-  return data;
+  return data || null;
 }
 
-// Insert a new entry, returns the full inserted row (with queue_number)
 async function insertEntry({ name, token, status, joinedAt, notifiedAt }) {
   const { data, error } = await db()
     .from("queue")
@@ -51,7 +34,6 @@ async function insertEntry({ name, token, status, joinedAt, notifiedAt }) {
   return data;
 }
 
-// Update status (and optionally notified_at) for a given queue_number
 async function updateStatus(queueNumber, status, notifiedAt = null) {
   const updates = { status };
   if (notifiedAt) updates.notified_at = notifiedAt;
@@ -62,10 +44,8 @@ async function updateStatus(queueNumber, status, notifiedAt = null) {
   if (error) throw error;
 }
 
-// Check if token has been used
 async function isTokenUsed(token) {
   const TWO_MIN_AGO = Date.now() - 2 * 60 * 1000;
-  // Purge old tokens first
   await db().from("used_tokens").delete().lt("used_at", TWO_MIN_AGO);
   const { data } = await db()
     .from("used_tokens")
@@ -75,14 +55,10 @@ async function isTokenUsed(token) {
   return !!data;
 }
 
-// Mark token as used
 async function markTokenUsed(token) {
-  await db()
-    .from("used_tokens")
-    .upsert({ token, used_at: Date.now() });
+  await db().from("used_tokens").upsert({ token, used_at: Date.now() });
 }
 
-// Served count
 async function getServedCount() {
   const { count } = await db()
     .from("queue")
@@ -91,11 +67,23 @@ async function getServedCount() {
   return count || 0;
 }
 
-// Clear all entries and used tokens
-async function clearEntries() {
-  const { error: error1 } = await db().from("queue").delete().neq("queue_number", -1);
-  if (error1) throw error1;
-  const { error: error2 } = await db().from("used_tokens").delete().neq("token", "none");
+async function getUsedTokens() {
+  const TWO_MIN_AGO = Date.now() - 2 * 60 * 1000;
+  const { data } = await db()
+    .from("used_tokens")
+    .select("token, used_at")
+    .gt("used_at", TWO_MIN_AGO);
+  return (data || []).map(t => ({ token: t.token, time: t.used_at }));
 }
 
-module.exports = { db, getActive, getEntry, insertEntry, updateStatus, isTokenUsed, markTokenUsed, getServedCount, clearEntries };
+module.exports = {
+  db,
+  getActive,
+  getEntry,
+  insertEntry,
+  updateStatus,
+  isTokenUsed,
+  markTokenUsed,
+  getServedCount,
+  getUsedTokens,
+};

@@ -1,21 +1,25 @@
-const { db, getActive } = require("./_queue");
+// GET /api/status?id=<queue_number>  — PUBLIC
+// Returns ISO notifiedAt string — client runs countdown locally after notified
+
+const { getActive, getEntry } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
+const { validateId } = require("./_validate");
 
 module.exports = async (req, res) => {
-  setCors(res);
+  setCors(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const { id } = req.query;
-  if (!id) return res.status(400).json({ error: "Missing id" });
+  let id;
+  try {
+    id = validateId(req.query.id);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
-  const { data: entry } = await db()
-    .from("queue")
-    .select("*")
-    .eq("queue_number", id)
-    .single();
+  const entry = await getEntry(id);
 
-  if (!entry || entry.status === "served") {
+  if (!entry || entry.status === "served" || entry.status === "noshow") {
     return res.status(404).json({ error: "Not in queue" });
   }
 
@@ -29,7 +33,7 @@ module.exports = async (req, res) => {
     position,
     total: active.length,
     status: entry.status,
-    // Send notifiedAt as ISO string once — client handles countdown locally
+    // ISO string — user client caches and runs countdown locally
     notifiedAt: entry.notified_at ? new Date(entry.notified_at).toISOString() : null,
   });
 };

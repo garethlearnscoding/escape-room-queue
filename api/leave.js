@@ -1,31 +1,34 @@
-const { db, getActive, updateStatus } = require("./_queue");
+// POST /api/leave?id=<queue_number>  — PUBLIC
+// User voluntarily leaves queue. Marks as served (keeps record).
+
+const { getEntry, getActive, updateStatus } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
+const { validateId } = require("./_validate");
 
 module.exports = async (req, res) => {
-  setCors(res);
+  setCors(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { id } = req.query;
-  if (!id) return res.status(400).json({ error: "Missing id" });
+  let id;
+  try {
+    id = validateId(req.query.id);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
-  const { data: entry } = await db()
-    .from("queue")
-    .select("*")
-    .eq("queue_number", id)
-    .single();
-
+  const entry = await getEntry(id);
   if (!entry || entry.status === "served") {
     return res.status(404).json({ error: "Not found" });
   }
 
-  const wasFirst = entry.status === "notified";
+  const wasNotified = entry.status === "notified";
 
-  // Mark as served (soft delete — keeps record)
-  await updateStatus(entry.queue_number, "served");
+  // Soft delete — mark served to preserve record
+  await updateStatus(id, "served");
 
-  // If they were first (notified), promote the next waiting person
-  if (wasFirst) {
+  // Promote next person if the one leaving was first
+  if (wasNotified) {
     const active = await getActive();
     if (active.length > 0) {
       await updateStatus(active[0].queue_number, "notified", Date.now());
@@ -33,4 +36,4 @@ module.exports = async (req, res) => {
   }
 
   return res.status(200).json({ ok: true });
-};K
+};
