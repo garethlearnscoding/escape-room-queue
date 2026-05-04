@@ -1,30 +1,34 @@
-const { read, save } = require("./_queue");
+const { db, getActive, updateStatus } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
 
 module.exports = async (req, res) => {
-  setCors(res, req);
+  setCors(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const data = await read();
+  const active = await getActive();
 
-  if (data.queue.length === 0) {
+  if (active.length === 0) {
     return res.status(200).json({ message: "Queue empty", served: null, next: null, remaining: 0 });
   }
 
-  const served = data.queue.shift();
-  data.served += 1;
+  const current = active[0];
 
-  if (data.queue.length > 0) {
-    data.queue[0].status = "notified";
-    data.queue[0].notifiedAt = Date.now();
+  // Mark current as served
+  await updateStatus(current.queue_number, "served");
+
+  // Notify next person if exists
+  let next = null;
+  if (active.length > 1) {
+    next = active[1];
+    await updateStatus(next.queue_number, "notified", Date.now());
   }
 
-  await save(data);
-
   return res.status(200).json({
-    served: served.label,
-    next: data.queue[0]?.label || null,
-    remaining: data.queue.length,
+    served: current.name,
+    servedQueueNumber: current.queue_number,
+    next: next?.name || null,
+    nextQueueNumber: next?.queue_number || null,
+    remaining: active.length - 1,
   });
 };

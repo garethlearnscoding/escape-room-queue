@@ -1,25 +1,36 @@
-const { read, save } = require("./_queue");
+const { db, getActive, updateStatus } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
 
 module.exports = async (req, res) => {
-  setCors(res, req);
+  setCors(res);
   if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "Missing id" });
 
-  const data = await read();
-  const idx = data.queue.findIndex(e => e.id === id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
+  const { data: entry } = await db()
+    .from("queue")
+    .select("*")
+    .eq("queue_number", id)
+    .single();
 
-  data.queue.splice(idx, 1);
-
-  if (idx === 0 && data.queue.length > 0) {
-    data.queue[0].status = "notified";
-    data.queue[0].notifiedAt = Date.now();
+  if (!entry || entry.status === "served") {
+    return res.status(404).json({ error: "Not found" });
   }
 
-  await save(data);
+  const wasFirst = entry.status === "notified";
+
+  // Mark as served (soft delete — keeps record)
+  await updateStatus(entry.queue_number, "served");
+
+  // If they were first (notified), promote the next waiting person
+  if (wasFirst) {
+    const active = await getActive();
+    if (active.length > 0) {
+      await updateStatus(active[0].queue_number, "notified", Date.now());
+    }
+  }
+
   return res.status(200).json({ ok: true });
-};
+};K

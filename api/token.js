@@ -1,7 +1,7 @@
 const { setCors, handleOptions } = require("./_cors");
 
 module.exports = (req, res) => {
-  setCors(res, req);
+  setCors(res);
   if (handleOptions(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 

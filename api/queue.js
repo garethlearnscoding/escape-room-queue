@@ -1,30 +1,24 @@
-const { read } = require("./_queue");
+const { getActive, getServedCount } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
 
-const WINDOW = 5 * 60 * 1000;
-
 module.exports = async (req, res) => {
-  setCors(res, req);
+  setCors(res);
   if (handleOptions(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const data = await read();
-  const now = Date.now();
+  const [active, served] = await Promise.all([getActive(), getServedCount()]);
 
   return res.status(200).json({
-    queue: data.queue.map((e, i) => ({
-      id: e.id,
-      ticketNumber: e.ticketNumber,
-      label: e.label,
+    queue: active.map((e, i) => ({
+      id: e.queue_number,
+      queueNumber: e.queue_number,
+      label: e.name,
       position: i + 1,
       status: e.status,
-      joinedAt: e.joinedAt,
-      notifiedAt: e.notifiedAt,
-      timeRemainingMs: e.notifiedAt ? Math.max(0, WINDOW - (now - e.notifiedAt)) : null,
-      expired: e.notifiedAt ? (now - e.notifiedAt > WINDOW) : false,
+      joinedAt: new Date(e.joined_at).toISOString(),
+      notifiedAt: e.notified_at ? new Date(e.notified_at).toISOString() : null,
     })),
-    total: data.queue.length,
-    served: data.served,
-    usedTokens: data.usedTokens || [],
+    total: active.length,
+    served,
   });
 };
