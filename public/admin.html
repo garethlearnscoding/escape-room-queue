@@ -84,7 +84,8 @@
       <!-- QUEUE CONTROL -->
       <div class="panel-section">
         <div class="panel-label">Queue Control</div>
-        <button class="btn btn-large" id="call-btn" onclick="callFirst()">Call to Booth</button>
+          <button class="btn btn-large" id="call-btn" onclick="callFirst()" style="margin-bottom: 12px;">Call to Booth</button>
+          <button class="btn btn-danger" onclick="clearQueue()">Clear Entire Queue</button>
         <div id="action-result" style="font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 12px; min-height: 16px;"></div>
       </div>
 
@@ -130,7 +131,7 @@
 
 <script>
   // ── STATE ──────────────────────────────────────────────────
-  const FIVE_MINUTES = 5 * 60 * 1000;
+  const NOTIFY_WINDOW = 5 * 60 * 1000;
   let API = "";
   let GITHUB_PAGES_URL = "";
   let SUPABASE_URL = "";
@@ -139,6 +140,15 @@
   let tokenExpiry = parseInt(sessionStorage.getItem("admin_token_expiry") || "0", 10);
   let refreshTimer = null;
   let expiryTimer = null;
+  let currentToken = null;
+
+
+  // ── HELPER ────────────────────────────────────────────────
+  function setResult(msg) {
+    const el = document.getElementById("action-result");
+    if (el) el.textContent = msg;
+  }
+
 
   // ── STARTUP ────────────────────────────────────────────────
   async function init() {
@@ -214,7 +224,7 @@
 
   // Authenticated fetch — automatically adds Bearer token
   async function authFetch(url, options = {}) {
-    return fetch(url, {
+    const res = await fetch(url, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -222,6 +232,17 @@
         ...(options.headers || {}),
       },
     });
+    if (res.status === 401) { logout(); }
+    return res;
+  }
+
+  // Safe JSON parse helper — use this everywhere instead of res.json()
+  async function safeJson(res) {
+    try {
+      return await res.json();
+    } catch {
+      return { error: `Server error (${res.status})` };
+    }
   }
 
   // ── APP ────────────────────────────────────────────────────
@@ -236,26 +257,61 @@
   async function generateQR() {
     const res = await authFetch("/api/token");
     const { token, generatedAt, expiresAt } = await res.json();
+    currentToken = token;
 
     const qrUrl = `${GITHUB_PAGES_URL}?t=${encodeURIComponent(token)}`;
+
     const box = document.getElementById("qr-box");
     box.innerHTML = "";
-    new QRCode(box, { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+    box.classList.remove("expired");
+    
+    const modalBox = document.getElementById("qr-modal-content");
+    modalBox.innerHTML = "";
+    modalBox.classList.remove("expired");
+
+    const texts = document.querySelectorAll(".expired-text");
+    texts.forEach(el => {
+      el.innerHTML = "Expired<br>Generate New";
+    });
+
+    const options = { text: qrUrl, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H };
+    new QRCode(box, options);
+    new QRCode(modalBox, options);
 
     document.getElementById("qr-generated").textContent =
       "Generated " + new Date(generatedAt).toLocaleTimeString();
 
-    const expiresMs = new Date(expiresAt).getTime();
     if (expiryTimer) clearInterval(expiryTimer);
     expiryTimer = setInterval(() => {
+
+      const expiresMs = new Date(expiresAt).getTime();
       const remaining = Math.max(0, expiresMs - Date.now());
       const secs = Math.ceil(remaining / 1000);
       const el = document.getElementById("qr-expires");
-      el.textContent = remaining > 0 ? `Expires in ${secs}s` : "Expired — generate a new one";
+      
+      // Don't show expiry if already used
+      if (document.getElementById("qr-box").classList.contains("expired")) {
+        // If it's expired due to use, we might want to stop the timer
+        // but loadQueue also sets this class. 
+        // Better to just not update text if it's already in an 'expired' state.
+        if (!el.textContent.includes("Expires")) return; 
+      }
+
+      el.textContent = remaining > 0 ? `Expires in ${secs}s` : "";
       el.className = remaining < 30000 ? "urgent" : "";
-      if (remaining === 0) clearInterval(expiryTimer);
+      
+      if (remaining === 0) {
+        document.getElementById("qr-box").classList.add("expired");
+        document.getElementById("qr-modal-content").classList.add("expired");
+        
+        const texts = document.querySelectorAll(".expired-text");
+        texts.forEach(el => {
+          el.innerHTML = "Expired<br>Generate New";
+        });
+
+        clearInterval(expiryTimer);
+      }
     }, 500);
-  
   }
 
   function toggleQRFullscreen() {
@@ -269,19 +325,17 @@
     }
   });
 
-  // ── SERVE NEXT ─────────────────────────────────────────────
+  // ── SERVICE ─────────────────────────────────────────────
   async function callFirst() {
     const btn = document.getElementById("call-btn");
     btn.disabled = true;
     try {
-      const res = await fetch(`${API}/api/call`, { method: "POST" });
+      const res = await authFetch(`${API}/api/call`, { method: "POST" });
       const data = await res.json();
-      const el = document.getElementById("action-result");
-      if (data.called) {
-        el.textContent = `Called: ${data.called}`;
-      } else {
-        el.textContent = data.error || data.message || "Queue empty";
-      }
+      setResult(data.called
+        ? `Called: ${data.called} (#${data.calledQueueNumber})`
+        : data.error || data.message || "Queue empty"
+      );
     } catch (e) {
       console.error(e);
     }
@@ -292,114 +346,80 @@
   async function noShow(id = null) {
     const msg = id ? "Remove this person from the queue?" : "Remove the first person in queue?";
     if (!confirm(msg)) return;
-    const btn = id ? null : document.getElementById("noshow-btn");
-    if (btn) btn.disabled = true;
     try {
-      const res = await fetch(`${API}/api/noshow`, {
+      const res = await authFetch(`${API}/api/noshow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id }),
       });
       const data = await res.json();
-      const el = document.getElementById("action-result");
-      if (data.removed) {
-        el.textContent = `Removed: ${data.removed}`;
-      } else {
-        el.textContent = data.error || data.message || "Queue empty";
-      }
+      setResult(data.removed
+        ? `Removed: ${data.removed} (#${data.removedQueueNumber})`
+        : data.error || data.message || "Queue empty"
+      );
     } catch (e) {
       console.error(e);
     }
-    if (btn) btn.disabled = false;
     loadQueue();
   }
 
-  async function serveFirst(id = null) {
-      const btn = id ? null : document.getElementById("serve-btn");
-      if (btn) btn.disabled = true;
-      try {
-        const res = await fetch(`${API}/api/serve`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id })
-        });
-        const data = await res.json();
-        const el = document.getElementById("action-result");
-        if (data.served) {
-          el.textContent = `Served: ${data.served}`;
-        } else {
-          el.textContent = data.error || data.message || "Queue empty";
-        }
-      } catch (e) {
-        console.error(e);
+  async function serve(id = null) {
+    try {
+      const res = await authFetch(`${API}/api/serve`, {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      setResult(data.served
+        ? `Served: ${data.served} (#${data.servedQueueNumber})`
+        : data.error || data.message || "Queue empty"
+      );
+    } catch (e) {
+      console.error(e);
+    }
+    loadQueue();
+  }
+
+  async function clearQueue() {
+    if (!confirm("Clear the entire queue? This cannot be undone.")) return;
+
+    const res = await authFetch(`${API}/api/clear`, {
+      method: "POST",
+      body: JSON.stringify({ confirm: "CLEAR_QUEUE" }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      setResult(data.message || "Queue cleared successfully");
+      currentToken = null;
+
+      // Stop expiry timer
+      if (expiryTimer) {
+        clearInterval(expiryTimer);
+        expiryTimer = null;
       }
-      if (btn) btn.disabled = false;
-      loadQueue();
+
+      // Clean up QR UI
+      const qrBox = document.getElementById("qr-box");
+      const modalQr = document.getElementById("qr-modal-content");
+
+      if (qrBox) {
+        qrBox.innerHTML = "";
+        qrBox.classList.remove("expired");
+      }
+      if (modalQr) {
+        modalQr.innerHTML = "";
+        modalQr.classList.remove("expired");
+      }
+
+      document.getElementById("qr-generated").textContent = "Not generated yet";
+      document.getElementById("qr-expires").textContent = "";
+      document.getElementById("qr-expires").className = "";
+    } else {
+      setResult(data.error || "Failed to clear queue");
     }
 
-
-  // ── QUEUE TABLE ────────────────────────────────────────────
-  // async function loadQueue() {
-  //   const res = await authFetch("/api/queue");
-
-  //   if (res.status === 401) {
-  //     clearInterval(refreshTimer);
-  //     logout();
-  //     return;
-  //   }
-
-  //   const data = await res.json();
-  //   const { queue, total, served } = data;
-  //   const now = Date.now();
-
-  //   document.getElementById("stat-waiting").textContent = queue.filter(e => e.status === "waiting").length;
-  //   document.getElementById("stat-notified").textContent = queue.filter(e => e.status === "notified").length;
-  //   document.getElementById("stat-served").textContent = served;
-  //   document.getElementById("stat-total").textContent = served + total;
-  //   document.getElementById("last-updated").textContent = "Updated " + new Date().toLocaleTimeString();
-
-  //   const tbody = document.getElementById("queue-body");
-  //   if (queue.length === 0) {
-  //     tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No one in queue</td></tr>`;
-  //     return;
-  //   }
-
-  //   tbody.innerHTML = queue.map(e => {
-  //     const notifiedMs = e.notifiedAt ? new Date(e.notifiedAt).getTime() : null;
-  //     const remaining = notifiedMs ? Math.max(0, FIVE_MINUTES - (now - notifiedMs)) : null;
-  //     const expired = notifiedMs && remaining === 0;
-
-  //     const rowClass = expired ? "row-expired" : e.status === "notified" ? "row-notified" : "";
-  //     const badge = expired
-  //       ? `<span class="badge badge-expired">Expired</span>`
-  //       : e.status === "notified"
-  //       ? `<span class="badge badge-notified">Notified</span>`
-  //       : `<span class="badge badge-waiting">Waiting</span>`;
-
-  //     let countdown = "—";
-  //     let countdownClass = "td-countdown";
-  //     if (remaining !== null) {
-  //       const m = String(Math.floor(remaining / 60000)).padStart(2, "0");
-  //       const s = String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0");
-  //       countdown = `${m}:${s}`;
-  //       if (remaining < 120000) countdownClass += " urgent";
-  //     }
-
-  //     const joined = new Date(e.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  //     return `
-  //       <tr class="${rowClass}">
-  //         <td class="td-pos">${e.position}</td>
-  //         <td class="td-pos">#${e.queueNumber}</td>
-  //         <td class="td-name">${e.label}</td>
-  //         <td>${badge}</td>
-  //         <td class="td-time">${joined}</td>
-  //         <td class="${countdownClass}">${countdown}</td>
-  //       </tr>`;
-  //   }).join("");
-  // }
-
-
+    loadQueue();
+  }
 
   async function loadQueue() {
     const res = await authFetch("/api/queue");
@@ -470,7 +490,7 @@
       let actions = "";
       if (e.status === "notified") {
         actions = `
-          <button class="btn btn-small" onclick="serveFirst('${e.id}')">Serve</button>
+          <button class="btn btn-small" onclick="serve('${e.id}')">Serve</button>
           <button class="btn btn-danger btn-small" onclick="noShow('${e.id}')">No Show</button>
         `;
       }

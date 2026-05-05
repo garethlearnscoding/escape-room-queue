@@ -18,7 +18,6 @@ async function verifyJWT(req) {
   return data.user;
 }
 
-// Wraps a handler — returns 401 if JWT missing/invalid
 function requireAuth(handler) {
   return async (req, res) => {
     try {
@@ -26,7 +25,12 @@ function requireAuth(handler) {
     } catch (err) {
       return res.status(401).json({ error: err.message });
     }
-    return handler(req, res);
+    try {
+      return await handler(req, res); // ✅ now caught
+    } catch (err) {
+      console.error("[requireAuth] Unhandled error in handler:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
   };
 }
 
