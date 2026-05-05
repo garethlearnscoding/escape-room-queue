@@ -38,8 +38,38 @@ module.exports = async (req, res) => {
 
   try {
 
-    // ── GET — admin queue view ────────────────────────────────
+    // ── GET — public status check (if ?id=) or admin queue view
     if (req.method === "GET") {
+
+      // Public: GET /api/queue?id=<queue_number>  (was /api/status)
+      if (req.query.id !== undefined) {
+        let id;
+        try { id = validateId(req.query.id); }
+        catch (err) { return res.status(400).json({ error: err.message }); }
+
+        const entry = await getEntry(id);
+        if (!entry) return res.status(404).json({ error: "Not in queue" });
+
+        if (entry.status === "served" || entry.status === "noshow") {
+          return res.status(200).json({ status: entry.status });
+        }
+
+        const active   = await getActive();
+        const position = active.findIndex(e => e.queue_number === entry.queue_number) + 1;
+
+        return res.status(200).json({
+          id:          entry.queue_number,
+          queueNumber: entry.queue_number,
+          label:       entry.name,
+          position,
+          peopleAhead: position - 1,
+          total:       active.length,
+          status:      entry.status,
+          notifiedAt:  entry.notified_at ? new Date(entry.notified_at).toISOString() : null,
+        });
+      }
+
+      // Admin: GET /api/queue  (Bearer required)
       if (!await requireAdmin(req, res)) return;
 
       const [active, served, usedTokens] = await Promise.all([
