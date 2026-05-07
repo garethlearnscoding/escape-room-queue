@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Queue Admin</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&icon_names=festival,rocket_launch&display=block" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <link rel="stylesheet" href="css/main.css"/>
 </head>
@@ -36,6 +37,7 @@
         <div class="live-dot"></div>
         Live
       </div>
+      <div id="last-updated" style="font-family:var(--mono);font-size:11px;color:var(--text-muted);"></div>
       <button class="logout-btn" onclick="logout()">Sign out</button>
     </div>
   </header>
@@ -61,10 +63,8 @@
       </div>
     </div>
 
-    <!-- LEFT PANEL -->
+    <!-- LEFT PANEL — QR only -->
     <div class="panel-left">
-
-      <!-- QR -->
       <div class="panel-section">
         <div class="panel-label">
           QR Code
@@ -81,38 +81,85 @@
         <button class="btn btn-outline" onclick="generateQR()">Generate new QR</button>
       </div>
 
-      <!-- QUEUE CONTROL -->
-      <div class="panel-section">
-        <div class="panel-label">Queue Control</div>
-          <button class="btn btn-large" id="call-btn" onclick="callFirst()" style="margin-bottom: 12px;">Call to Booth</button>
-          <button class="btn btn-danger" onclick="clearQueue()">Clear Entire Queue</button>
-        <div id="action-result" style="font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 12px; min-height: 16px;"></div>
+      <!-- Combined Clear Queue -->
+      <div class="panel-section" style="margin-top:auto;">
+        <div class="panel-label">System Reset</div>
+        <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Wipes all queues and used QR tokens.</p>
+        <button class="btn btn-danger btn-outline" onclick="clearQueue()">Clear Entire Queue</button>
+        <div id="action-result-global" class="action-result" style="margin-top:8px;"></div>
       </div>
-
     </div>
 
-    <!-- RIGHT PANEL -->
+    <!-- RIGHT PANEL — two theme queues side by side -->
     <div class="panel-right">
-      <div class="table-header">
-        <div class="panel-label">Current queue</div>
-        <div id="last-updated"></div>
-      </div>
-      <div class="queue-table">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Joined</th>
-              <th>Window</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="queue-body">
-            <tr class="empty-row"><td colspan="6">No one in queue</td></tr>
-          </tbody>
-        </table>
+      <div class="theme-panels">
+
+        <!-- HELIOS QUEUE -->
+        <div class="theme-panel">
+          <div class="theme-panel-header">
+            <div class="theme-panel-title">
+              <span class="theme-tag helios-tag">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px;">rocket_launch</span>
+                Helios
+              </span>
+            </div>
+            <div class="theme-panel-actions">
+              <button class="btn btn-large" id="call-btn-helios" onclick="callFirst('helios')">Call to Booth</button>
+            </div>
+            <div class="action-result" id="action-result-helios"></div>
+          </div>
+          <div class="queue-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th>Window</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="helios-queue-body">
+                <tr class="empty-row"><td colspan="6">No one in queue</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CIRCUS QUEUE -->
+        <div class="theme-panel">
+          <div class="theme-panel-header">
+            <div class="theme-panel-title">
+              <span class="theme-tag circus-tag">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px;">festival</span>
+                Circus
+              </span>
+            </div>
+            <div class="theme-panel-actions">
+              <button class="btn btn-large" id="call-btn-circus" onclick="callFirst('circus')">Call to Booth</button>
+            </div>
+            <div class="action-result" id="action-result-circus"></div>
+          </div>
+          <div class="queue-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th>Window</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="circus-queue-body">
+                <tr class="empty-row"><td colspan="6">No one in queue</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </div>
   </main>
@@ -140,13 +187,11 @@
   let expiryTimer = null;
   let currentToken = null;
 
-
-  // ── HELPER ────────────────────────────────────────────────
-  function setResult(msg) {
-    const el = document.getElementById("action-result");
+  // ── HELPERS ────────────────────────────────────────────────
+  function setResult(theme, msg) {
+    const el = document.getElementById(`action-result-${theme}`);
     if (el) el.textContent = msg;
   }
-
 
   // ── STARTUP ────────────────────────────────────────────────
   async function init() {
@@ -298,17 +343,17 @@
     if (e.key === "Escape") document.getElementById("qr-modal").classList.remove("active");
   });
 
-  // ── SERVICE ──────────────────────────────────────────────
-  async function callFirst() {
-    const btn = document.getElementById("call-btn");
+  // ── QUEUE ACTIONS ─────────────────────────────────────────
+  async function callFirst(theme) {
+    const btn = document.getElementById(`call-btn-${theme}`);
     btn.disabled = true;
     try {
       const res = await authFetch(`${API}/api/queue`, {
         method: "PATCH",
-        body: JSON.stringify({ action: "call" }),
+        body: JSON.stringify({ action: "call", theme }),
       });
       const data = await res.json();
-      setResult(data.called
+      setResult(theme, data.called
         ? `Called: ${data.called} (#${data.calledQueueNumber})`
         : data.error || data.message || "Queue empty"
       );
@@ -327,10 +372,8 @@
         body: JSON.stringify({ action: "noshow", id }),
       });
       const data = await res.json();
-      setResult(data.removed
-        ? `Removed: ${data.removed} (#${data.removedQueueNumber})`
-        : data.error || data.message || "Not found"
-      );
+      // Show result in whichever panel owns this entry (will refresh shortly)
+      console.log(data.removed ? `Removed: ${data.removed}` : data.error);
     } catch (e) {
       console.error(e);
     }
@@ -344,10 +387,7 @@
         body: JSON.stringify({ action: "serve", id }),
       });
       const data = await res.json();
-      setResult(data.served
-        ? `Served: ${data.served} (#${data.servedQueueNumber})`
-        : data.error || data.message || "Not found"
-      );
+      console.log(data.served ? `Served: ${data.served}` : data.error);
     } catch (e) {
       console.error(e);
     }
@@ -355,74 +395,28 @@
   }
 
   async function clearQueue() {
-    if (!confirm("Clear the entire queue? This cannot be undone.")) return;
+    const confirmation = prompt('Type "CLEAR" (all caps) to wipe all queues and tokens:');
+    if (confirmation !== "CLEAR") return;
 
-    const res = await authFetch(`${API}/api/queue`, { method: "DELETE" });
+    const res = await authFetch("/api/queue", { method: "DELETE" });
     const data = await res.json();
 
+    const globalResult = document.getElementById("action-result-global");
     if (data.ok) {
-      setResult(data.message || "Queue cleared successfully");
-      currentToken = null;
-
-      if (expiryTimer) { clearInterval(expiryTimer); expiryTimer = null; }
-
-      const qrBox   = document.getElementById("qr-box");
-      const modalQr = document.getElementById("qr-modal-content");
-      if (qrBox)   { qrBox.innerHTML = "";   qrBox.classList.remove("expired"); }
-      if (modalQr) { modalQr.innerHTML = ""; modalQr.classList.remove("expired"); }
-
-      document.getElementById("qr-generated").textContent = "Not generated yet";
-      document.getElementById("qr-expires").textContent = "";
-      document.getElementById("qr-expires").className = "";
+      if (globalResult) globalResult.textContent = data.message || "Queue cleared";
     } else {
-      setResult(data.error || "Failed to clear queue");
+      if (globalResult) globalResult.textContent = data.error || "Failed to clear queue";
     }
 
     loadQueue();
   }
 
-  async function loadQueue() {
-    const res = await authFetch("/api/queue");
+  // ── QUEUE TABLE ────────────────────────────────────────────
+  function renderQueueRows(entries, now) {
+    if (entries.length === 0)
+      return `<tr class="empty-row"><td colspan="6">No one in queue</td></tr>`;
 
-    if (res.status === 401) {
-      clearInterval(refreshTimer);
-      logout();
-      return;
-    }
-
-    const { queue, total, served, usedTokens } = await res.json();
-    const now = Date.now();
-
-    // Mark QR as used if current token appears in the used list
-    if (currentToken && usedTokens.some(t => t.token === currentToken)) {
-      document.getElementById("qr-box").classList.add("expired");
-      document.getElementById("qr-modal-content").classList.add("expired");
-      document.getElementById("qr-expires").textContent = "";
-      document.querySelectorAll(".expired-text").forEach(el => {
-        el.innerHTML = "QR Code already used<br>Generate new QR";
-      });
-    }
-
-    const waiting  = queue.filter(e => e.status === "waiting").length;
-    const notified = queue.filter(e => e.status === "notified" && !e.expired).length;
-
-    document.getElementById("stat-waiting").textContent  = waiting;
-    document.getElementById("stat-notified").textContent = notified;
-    document.getElementById("stat-served").textContent   = served;
-    document.getElementById("stat-total").textContent    = served + total;
-    document.getElementById("last-updated").textContent  =
-      "Updated " + new Date().toLocaleTimeString();
-
-    document.getElementById("call-btn").disabled = notified >= 2;
-
-    const tbody = document.getElementById("queue-body");
-
-    if (queue.length === 0) {
-      tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No one in queue</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = queue.map(e => {
+    return entries.map((e, i) => {
       const rowClass = e.expired ? "row-expired" : e.status === "notified" ? "row-notified" : "";
       const badge = e.expired
         ? `<span class="badge badge-expired">Expired</span>`
@@ -448,7 +442,7 @@
 
       return `
         <tr class="${rowClass}">
-          <td class="td-pos">${e.position}</td>
+          <td class="td-pos">${i + 1}</td>
           <td class="td-name">${e.label}</td>
           <td>${badge}</td>
           <td class="td-time">${joined}</td>
@@ -456,6 +450,53 @@
           <td>${actions}</td>
         </tr>`;
     }).join("");
+  }
+
+  async function loadQueue() {
+    const res = await authFetch("/api/queue");
+
+    if (res.status === 401) {
+      clearInterval(refreshTimer);
+      logout();
+      return;
+    }
+
+    const { queue, total, served, usedTokens } = await res.json();
+    const now = Date.now();
+
+    // Mark QR as used if current token appears in the used list
+    if (currentToken && usedTokens.some(t => t.token === currentToken)) {
+      document.getElementById("qr-box").classList.add("expired");
+      document.getElementById("qr-modal-content").classList.add("expired");
+      document.getElementById("qr-expires").textContent = "";
+      document.querySelectorAll(".expired-text").forEach(el => {
+        el.innerHTML = "QR Code already used<br>Generate new QR";
+      });
+    }
+
+    // Global stats (combined)
+    const waiting  = queue.filter(e => e.status === "waiting").length;
+    const notified = queue.filter(e => e.status === "notified" && !e.expired).length;
+    document.getElementById("stat-waiting").textContent  = waiting;
+    document.getElementById("stat-notified").textContent = notified;
+    document.getElementById("stat-served").textContent   = served;
+    document.getElementById("stat-total").textContent    = served + total;
+    document.getElementById("last-updated").textContent  =
+      "Updated " + new Date().toLocaleTimeString();
+
+    // Split by theme
+    const heliosQueue = queue.filter(e => e.theme === "helios");
+    const circusQueue = queue.filter(e => e.theme === "circus");
+
+    // Render per-theme tables
+    document.getElementById("helios-queue-body").innerHTML = renderQueueRows(heliosQueue, now);
+    document.getElementById("circus-queue-body").innerHTML = renderQueueRows(circusQueue, now);
+
+    // Enable/disable Call buttons per theme (disable if already has a notified entry)
+    const heliosNotified = heliosQueue.filter(e => e.status === "notified" && !e.expired).length;
+    const circusNotified = circusQueue.filter(e => e.status === "notified" && !e.expired).length;
+    document.getElementById("call-btn-helios").disabled = heliosNotified >= 1;
+    document.getElementById("call-btn-circus").disabled = circusNotified >= 1;
   }
 
   init();

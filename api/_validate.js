@@ -25,4 +25,12 @@ function validateId(id) {
   return num;
 }
 
-module.exports = { validateToken, validateName, validateId };
+function validateTheme(theme) {
+  if (!theme || typeof theme !== "string") throw new Error("Missing theme");
+  const t = theme.trim().toLowerCase();
+  if (t !== "helios" && t !== "circus") throw new Error("Theme must be 'helios' or 'circus'");
+  return t;
+}
+
+module.exports = { validateToken, validateName, validateId, validateTheme };
+

@@ -3,8 +3,10 @@ const { adminClient } = require("./_supabase");
 function db() { return adminClient(); }
 
 // Active = waiting or notified only (excludes served and noshow)
-async function getActive() {
-  const { data, error } = await db().rpc("get_active_queue");
+// Pass theme to filter by room ('helios' | 'circus'), or omit for all
+async function getActive(theme = null) {
+  const args = theme ? { p_theme: theme } : {};
+  const { data, error } = await db().rpc("get_active_queue", args);
   if (error) throw error;
   return data || [];
 }
@@ -18,7 +20,7 @@ async function getEntry(queueNumber) {
   return data || null;
 }
 
-async function insertEntry({ name, token, status, joinedAt, notifiedAt }) {
+async function insertEntry({ name, token, status, joinedAt, notifiedAt, theme }) {
   const { data, error } = await db()
     .from("queue")
     .insert({
@@ -27,6 +29,7 @@ async function insertEntry({ name, token, status, joinedAt, notifiedAt }) {
       status,
       joined_at: joinedAt,
       notified_at: notifiedAt || null,
+      theme: theme || "helios",
     })
     .select()
     .single();

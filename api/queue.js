@@ -1,13 +1,14 @@
 // /api/queue
 //
-// GET    — ADMIN  — fetch full queue with stats
-// POST   — PUBLIC — join queue
-// PATCH  — MIXED  — queue actions (body: { action, id? })
-//   "call"    — admin:  notify first waiting person
-//   "serve"   — admin:  mark person as served, promote next
-//   "noshow"  — admin:  mark person as no-show, promote next
+// GET    — ADMIN  — fetch full queue with stats (both themes)
+// GET    — PUBLIC — ?id=<queue_number>: personal status check
+// POST   — PUBLIC — join queue (requires theme in body)
+// PATCH  — MIXED  — queue actions (body: { action, id?, theme? })
+//   "call"    — admin:  notify first waiting person in a theme
+//   "serve"   — admin:  mark person as served, promote next in same theme
+//   "noshow"  — admin:  mark person as no-show, promote next in same theme
 //   "leave"   — public: user voluntarily leaves queue
-// DELETE — ADMIN  — wipe entire queue + token store
+// DELETE — ADMIN  — wipe queue; body/query ?theme= clears only that theme
 
 const {
   db, getActive, getEntry, insertEntry,
@@ -16,7 +17,7 @@ const {
 } = require("./_queue");
 const { setCors, handleOptions } = require("./_cors");
 const { verifyJWT } = require("./_auth");
-const { validateToken, validateName, validateId } = require("./_validate");
+const { validateToken, validateName, validateId, validateTheme } = require("./_validate");
 
 const TWO_MINUTES  = 2 * 60 * 1000;
 const NOTIFY_WINDOW = 5 * 60 * 1000;
@@ -38,10 +39,10 @@ module.exports = async (req, res) => {
 
   try {
 
-    // ── GET — public status check (if ?id=) or admin queue view
+    // ── GET ───────────────────────────────────────────────────
     if (req.method === "GET") {
 
-      // Public: GET /api/queue?id=<queue_number>  (was /api/status)
+      // Public: GET /api/queue?id=<queue_number>  — personal status
       if (req.query.id !== undefined) {
         let id;
         try { id = validateId(req.query.id); }
@@ -54,13 +55,15 @@ module.exports = async (req, res) => {
           return res.status(200).json({ status: entry.status });
         }
 
-        const active   = await getActive();
+        // Position is calculated within the same theme's queue
+        const active   = await getActive(entry.theme);
         const position = active.findIndex(e => e.queue_number === entry.queue_number) + 1;
 
         return res.status(200).json({
           id:          entry.queue_number,
           queueNumber: entry.queue_number,
           label:       entry.name,
+          theme:       entry.theme,
           position,
           peopleAhead: position - 1,
           total:       active.length,
@@ -69,11 +72,11 @@ module.exports = async (req, res) => {
         });
       }
 
-      // Admin: GET /api/queue  (Bearer required)
+      // Admin: GET /api/queue  — full queue view (Bearer required)
       if (!await requireAdmin(req, res)) return;
 
       const [active, served, usedTokens] = await Promise.all([
-        getActive(),
+        getActive(),          // all themes combined
         getServedCount(),
         getUsedTokens(),
       ]);
@@ -86,6 +89,7 @@ module.exports = async (req, res) => {
             id:          e.queue_number,
             queueNumber: e.queue_number,
             label:       e.name,
+            theme:       e.theme,
             position:    i + 1,
             status:      e.status,
             joinedAt:    e.joined_at,
@@ -101,10 +105,11 @@ module.exports = async (req, res) => {
 
     // ── POST — public join ────────────────────────────────────
     if (req.method === "POST") {
-      let token, name;
+      let token, name, theme;
       try {
         token = validateToken(req.body?.token);
         name  = validateName(req.body?.name);
+        theme = validateTheme(req.body?.theme);
       } catch (err) {
         return res.status(400).json({ error: err.message });
       }
@@ -125,9 +130,10 @@ module.exports = async (req, res) => {
 
       await markTokenUsed(token);
 
-      const active = await getActive();
+      // Position is within the chosen theme's queue
+      const active = await getActive(theme);
       const row = await insertEntry({
-        name, token, status: "waiting",
+        name, token, theme, status: "waiting",
         joinedAt: Date.now(), notifiedAt: null,
       });
 
@@ -135,6 +141,7 @@ module.exports = async (req, res) => {
         id:          row.queue_number,
         queueNumber: row.queue_number,
         label:       row.name,
+        theme:       row.theme,
         position:    active.length + 1,
         total:       active.length + 1,
         status:      "waiting",
@@ -144,7 +151,7 @@ module.exports = async (req, res) => {
 
     // ── PATCH — queue actions ─────────────────────────────────
     if (req.method === "PATCH") {
-      const { action, id: rawId } = req.body || {};
+      const { action, id: rawId, theme: rawTheme } = req.body || {};
 
       // "leave" is the only public action (user removes themselves)
       if (action === "leave") {
@@ -159,10 +166,15 @@ module.exports = async (req, res) => {
         const wasNotified = entry.status === "notified";
         await updateStatus(id, "served");
 
+        // Promote next person within the same theme
         if (wasNotified) {
-          const active = await getActive();
-          if (active.length > 0)
-            await updateStatus(active[0].queue_number, "notified", Date.now());
+          try {
+            const active = await getActive(entry.theme);
+            if (active.length > 0)
+              await updateStatus(active[0].queue_number, "notified", Date.now());
+          } catch (promoteErr) {
+            console.error("[PATCH leave] Promotion failed:", promoteErr);
+          }
         }
         return res.status(200).json({ ok: true });
       }
@@ -170,14 +182,19 @@ module.exports = async (req, res) => {
       // All other actions require admin auth
       if (!await requireAdmin(req, res)) return;
 
+      // ── call: notify first waiting person in a specific theme ──
       if (action === "call") {
-        const active  = await getActive();
+        let theme;
+        try { theme = validateTheme(rawTheme); }
+        catch (err) { return res.status(400).json({ error: err.message }); }
+
+        const active  = await getActive(theme);
         const waiting = active.filter(e => e.status === "waiting");
 
         if (waiting.length === 0) {
           const alreadyCalled = active.some(e => e.status === "notified");
           if (alreadyCalled)
-            return res.status(400).json({ error: "Someone is already being called." });
+            return res.status(400).json({ error: `Someone from ${theme} is already being called.` });
           return res.status(200).json({ message: "No one waiting", called: null });
         }
 
@@ -186,9 +203,11 @@ module.exports = async (req, res) => {
         return res.status(200).json({
           called: next.name,
           calledQueueNumber: next.queue_number,
+          theme,
         });
       }
 
+      // ── serve / noshow ──
       if (action === "serve" || action === "noshow") {
         let id;
         try { id = validateId(rawId); }
@@ -204,11 +223,17 @@ module.exports = async (req, res) => {
         const newStatus   = action === "serve" ? "served" : "noshow";
         await updateStatus(id, newStatus);
 
+        // Promote next within the same theme's queue
         if (wasNotified) {
-          const active      = await getActive();
-          const nextWaiting = active.find(e => e.status === "waiting");
-          if (nextWaiting)
-            await updateStatus(nextWaiting.queue_number, "notified", Date.now());
+          try {
+            const active      = await getActive(entry.theme);
+            const nextWaiting = active.find(e => e.status === "waiting");
+            if (nextWaiting)
+              await updateStatus(nextWaiting.queue_number, "notified", Date.now());
+          } catch (promoteErr) {
+            console.error("[PATCH serve/noshow] Promotion failed:", promoteErr);
+            // We continue anyway so the current person is resolved
+          }
         }
 
         return res.status(200).json(
@@ -221,22 +246,39 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: "Unknown action" });
     }
 
-    // ── DELETE — admin clear ──────────────────────────────────
+    // ── DELETE — admin clear (per-theme or full wipe) ─────────
     if (req.method === "DELETE") {
       if (!await requireAdmin(req, res)) return;
 
+      // Theme can come from query string (?theme=helios) or JSON body
+      const rawTheme = req.query?.theme || req.body?.theme;
+      let theme = null;
+      if (rawTheme) {
+        try { theme = validateTheme(rawTheme); }
+        catch (err) { return res.status(400).json({ error: err.message }); }
+      }
+
       const supabase = db();
-      const [queueResult, tokenResult] = await Promise.all([
-        supabase.from("queue").delete().neq("queue_number", 0),
-        supabase.from("used_tokens").delete().neq("token", ""),
-      ]);
+
+      // Delete matching queue rows
+      let queueQuery = supabase.from("queue").delete().neq("queue_number", 0);
+      if (theme) queueQuery = queueQuery.eq("theme", theme);
+      const queueResult = await queueQuery;
 
       if (queueResult.error)
         return res.status(500).json({ error: "Failed to clear queue: " + queueResult.error.message });
-      if (tokenResult.error)
-        return res.status(500).json({ error: "Failed to clear tokens: " + tokenResult.error.message });
 
-      return res.status(200).json({ ok: true, message: "Queue and token store cleared." });
+      // Only wipe the token store on a full (no-theme) clear
+      if (!theme) {
+        const tokenResult = await supabase.from("used_tokens").delete().neq("token", "");
+        if (tokenResult.error)
+          return res.status(500).json({ error: "Failed to clear tokens: " + tokenResult.error.message });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        message: theme ? `${theme} queue cleared.` : "Queue and token store cleared.",
+      });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

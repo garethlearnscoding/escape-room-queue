@@ -222,10 +222,13 @@ header .header-right {
 main {
     flex: 1;
     display: grid;
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 280px 1fr;
     grid-template-rows: auto 1fr;
     gap: 0;
+    overflow: hidden;
+    min-height: 0;
 }
+
 
 /* ── STAT BAR ── */
 .stat-bar {
@@ -417,12 +420,87 @@ main {
     min-height: 16px;
 }
 
-/* ── RIGHT PANEL — QUEUE TABLE ── */
+/* ── RIGHT PANEL — THEME QUEUES ── */
 .panel-right {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;
 }
+
+/* Two theme panels side by side */
+.theme-panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.theme-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+    min-height: 0;
+}
+
+.theme-panel:last-child { border-right: none; }
+
+.theme-panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.theme-panel-title {
+    margin-bottom: 12px;
+}
+
+.theme-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    display: inline-block;
+    border: 1px solid;
+}
+
+.helios-tag {
+    background: #fefce8;
+    color: #854d0e;
+    border-color: #f59e0b;
+}
+
+.circus-tag {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+
+.theme-panel-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.theme-panel-actions .btn {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 11px;
+}
+
+.action-result {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    min-height: 14px;
+}
+
+
 
 .table-header {
     padding: 16px 28px;

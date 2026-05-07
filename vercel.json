@@ -6,7 +6,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://client.njcfuntasia.com"
+          "value": "https://chunkytoasterclient.njcfuntasia.com"
         },
         {
           "key": "Access-Control-Allow-Methods",
