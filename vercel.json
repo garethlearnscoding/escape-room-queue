@@ -6,7 +6,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://chunkytoasterclient.njcfuntasia.com"
+          "value": "https://escape-room.njcfuntasia.com"
         },
         {
           "key": "Access-Control-Allow-Methods",

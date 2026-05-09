@@ -5,7 +5,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIG
 function setCors(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes("*")) {
-    res.setHeader("Access-Control-Allow-Origin", "https://chunkytoasterclient.njcfuntasia.com");
+    res.setHeader("Access-Control-Allow-Origin", "https://escape-room.njcfuntasia.com");
   } else if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
