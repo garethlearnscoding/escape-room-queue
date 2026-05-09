@@ -1,7 +1,7 @@
 create table queue (
   queue_number serial primary key,
   name text not null,
-  status text not null default 'waiting' check (status in ('waiting', 'notified', 'served')),
+  status text not null default 'waiting' check (status in ('waiting', 'notified', 'served','noshow')),
   token text not null,
   joined_at bigint not null,
   notified_at bigint

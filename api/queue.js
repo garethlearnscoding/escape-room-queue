@@ -38,7 +38,30 @@ module.exports = async (req, res) => {
   if (handleOptions(req, res)) return;
 
   try {
-
+    if (req.method === "OPTIONS") {
+      res.setHeader(
+        "Access-Control-Allow-Origin",
+        "https://chunkytoasterclient.njcfuntasia.com"
+      );
+  
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET,POST,OPTIONS,PATCH,DELETE"
+      );
+  
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization"
+      );
+  
+      return res.status(200).end();
+    }
+  
+    // CORS headers for actual request
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      "https://chunkytoasterclient.njcfuntasia.com"
+    );
     // ── GET ───────────────────────────────────────────────────
     if (req.method === "GET") {
 
@@ -223,8 +246,8 @@ module.exports = async (req, res) => {
         const newStatus   = action === "serve" ? "served" : "noshow";
         await updateStatus(id, newStatus);
 
-        // Promote next within the same theme's queue
-        if (wasNotified) {
+        // Promote next within the same theme's queue ONLY for noshow
+        if (wasNotified && action === "noshow") {
           try {
             const active      = await getActive(entry.theme);
             const nextWaiting = active.find(e => e.status === "waiting");
@@ -238,8 +261,8 @@ module.exports = async (req, res) => {
 
         return res.status(200).json(
           action === "serve"
-            ? { served: entry.name, servedQueueNumber: entry.queue_number }
-            : { removed: entry.name, removedQueueNumber: entry.queue_number }
+            ? { served: entry.name, servedQueueNumber: entry.queue_number, theme: entry.theme }
+            : { removed: entry.name, removedQueueNumber: entry.queue_number, theme: entry.theme }
         );
       }
 

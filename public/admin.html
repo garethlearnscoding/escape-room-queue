@@ -186,11 +186,29 @@
   let refreshTimer = null;
   let expiryTimer = null;
   let currentToken = null;
+  let rowCountdownTimers = {};
 
   // ── HELPERS ────────────────────────────────────────────────
   function setResult(theme, msg) {
     const el = document.getElementById(`action-result-${theme}`);
     if (el) el.textContent = msg;
+  }
+
+  function startRowCountdown(queueNumber, notifiedAt) {
+    if (rowCountdownTimers[queueNumber]) {
+      clearInterval(rowCountdownTimers[queueNumber]);
+    }
+    const el = document.getElementById(`countdown-${queueNumber}`);
+    if (!el) return;
+    const tick = () => {
+      const remaining = Math.max(0, NOTIFY_WINDOW - (Date.now() - notifiedAt));
+      const m = String(Math.floor(remaining / 60000)).padStart(2, "0");
+      const s = String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0");
+      el.textContent = `${m}:${s}`;
+      el.className = remaining < 120000 ? "td-countdown urgent" : "td-countdown";
+    };
+    tick();
+    rowCountdownTimers[queueNumber] = setInterval(tick, 1000);
   }
 
   // ── STARTUP ────────────────────────────────────────────────
@@ -372,8 +390,11 @@
         body: JSON.stringify({ action: "noshow", id }),
       });
       const data = await res.json();
-      // Show result in whichever panel owns this entry (will refresh shortly)
-      console.log(data.removed ? `Removed: ${data.removed}` : data.error);
+      if (data.removed && data.theme) {
+        setResult(data.theme, `Removed: ${data.removed} (#${data.removedQueueNumber})`);
+      } else if (data.error) {
+        console.error(data.error);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -387,7 +408,11 @@
         body: JSON.stringify({ action: "serve", id }),
       });
       const data = await res.json();
-      console.log(data.served ? `Served: ${data.served}` : data.error);
+      if (data.served && data.theme) {
+        setResult(data.theme, `Served: ${data.served} (#${data.servedQueueNumber})`);
+      } else if (data.error) {
+        console.error(data.error);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -436,7 +461,7 @@
 
       const joined  = new Date(e.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const actions = e.status === "notified" ? `
-        <button class="btn btn-small" onclick="serve('${e.id}')">Serve</button>
+        <button class="btn btn-small" onclick="serve('${e.id}')">Served</button>
         <button class="btn btn-danger btn-small" onclick="noShow('${e.id}')">No Show</button>
       ` : "";
 
@@ -446,7 +471,7 @@
           <td class="td-name">${e.label}</td>
           <td>${badge}</td>
           <td class="td-time">${joined}</td>
-          <td class="${countdownClass}">${countdown}</td>
+          <td class="td-countdown" id="countdown-${e.queueNumber}"></td>
           <td>${actions}</td>
         </tr>`;
     }).join("");
@@ -484,13 +509,22 @@
     document.getElementById("last-updated").textContent  =
       "Updated " + new Date().toLocaleTimeString();
 
-    // Split by theme
-    const heliosQueue = queue.filter(e => e.theme === "helios");
-    const circusQueue = queue.filter(e => e.theme === "circus");
+    // Clear all existing countdown timers before re-rendering
+    Object.keys(rowCountdownTimers).forEach(k => {
+      clearInterval(rowCountdownTimers[k]);
+      delete rowCountdownTimers[k];
+    });
 
-    // Render per-theme tables
+    const heliosQueue = queue.filter(e => e.theme === 'helios');
+    const circusQueue = queue.filter(e => e.theme === 'circus');
+    
     document.getElementById("helios-queue-body").innerHTML = renderQueueRows(heliosQueue, now);
     document.getElementById("circus-queue-body").innerHTML = renderQueueRows(circusQueue, now);
+    
+    // Start live countdowns for every notified row
+    [...heliosQueue, ...circusQueue].forEach(e => {
+      if (e.notifiedAt) startRowCountdown(e.queueNumber, e.notifiedAt);
+    });
 
     // Enable/disable Call buttons per theme (disable if already has a notified entry)
     const heliosNotified = heliosQueue.filter(e => e.status === "notified" && !e.expired).length;
