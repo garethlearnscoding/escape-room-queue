@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
     if (req.method === "OPTIONS") {
       res.setHeader(
         "Access-Control-Allow-Origin",
-        "https://chunkytoasterclient.njcfuntasia.com"
+        "https://escape-room.njcfuntasia.com"
       );
   
       res.setHeader(
@@ -60,7 +60,7 @@ module.exports = async (req, res) => {
     // CORS headers for actual request
     res.setHeader(
       "Access-Control-Allow-Origin",
-      "https://chunkytoasterclient.njcfuntasia.com"
+      "https://escape-room.njcfuntasia.com"
     );
     // ── GET ───────────────────────────────────────────────────
     if (req.method === "GET") {
