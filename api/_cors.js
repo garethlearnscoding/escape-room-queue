@@ -1,15 +1,9 @@
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN || "*")
-  .split(",")
-  .map(o => o.trim());
-
 function setCors(req, res) {
   const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes("*")) {
-    res.setHeader("Access-Control-Allow-Origin", "https://escape-room.njcfuntasia.com");
-  } else if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
+  const ALLOWED_ORIGIN = "https://client.njcfuntasia.com";
+  
+  // If the request origin matches our allowed origin, or it's a browser check
+  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PATCH,DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }

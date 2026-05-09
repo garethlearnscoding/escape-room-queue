@@ -104,7 +104,7 @@
               </span>
             </div>
             <div class="theme-panel-actions">
-              <button class="btn btn-large" id="call-btn-helios" onclick="callFirst('helios')">Call to Booth</button>
+              <button class="btn btn-large" id="call-btn-helios" onclick="callUser('helios')">Call Next</button>
             </div>
             <div class="action-result" id="action-result-helios"></div>
           </div>
@@ -137,7 +137,7 @@
               </span>
             </div>
             <div class="theme-panel-actions">
-              <button class="btn btn-large" id="call-btn-circus" onclick="callFirst('circus')">Call to Booth</button>
+              <button class="btn btn-large" id="call-btn-circus" onclick="callUser('circus')">Call Next</button>
             </div>
             <div class="action-result" id="action-result-circus"></div>
           </div>
@@ -362,13 +362,13 @@
   });
 
   // ── QUEUE ACTIONS ─────────────────────────────────────────
-  async function callFirst(theme) {
-    const btn = document.getElementById(`call-btn-${theme}`);
-    btn.disabled = true;
+  async function callUser(theme, id = null) {
+    const btn = id ? null : document.getElementById(`call-btn-${theme}`);
+    if (btn) btn.disabled = true;
     try {
       const res = await authFetch(`${API}/api/queue`, {
         method: "PATCH",
-        body: JSON.stringify({ action: "call", theme }),
+        body: JSON.stringify({ action: "call", theme, id }),
       });
       const data = await res.json();
       setResult(theme, data.called
@@ -378,7 +378,7 @@
     } catch (e) {
       console.error(e);
     }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
     loadQueue();
   }
 
@@ -460,10 +460,18 @@
       }
 
       const joined  = new Date(e.joinedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      const actions = e.status === "notified" ? `
-        <button class="btn btn-small" onclick="serve('${e.id}')">Served</button>
-        <button class="btn btn-danger btn-small" onclick="noShow('${e.id}')">No Show</button>
-      ` : "";
+      
+      let actions = "";
+      if (e.status === "waiting") {
+        actions = `<button class="btn btn-small" onclick="callUser('${e.theme}', ${e.id})">Call</button>`;
+      } else if (e.status === "notified") {
+        actions = `
+          <div class="action-buttons">
+            <button class="btn btn-small" onclick="serve(${e.id})">Served</button>
+            <button class="btn btn-danger btn-small" onclick="noShow(${e.id})">No Show</button>
+          </div>
+        `;
+      }
 
       return `
         <tr class="${rowClass}">
@@ -526,11 +534,9 @@
       if (e.notifiedAt) startRowCountdown(e.queueNumber, e.notifiedAt);
     });
 
-    // Enable/disable Call buttons per theme (disable if already has a notified entry)
-    const heliosNotified = heliosQueue.filter(e => e.status === "notified" && !e.expired).length;
-    const circusNotified = circusQueue.filter(e => e.status === "notified" && !e.expired).length;
-    document.getElementById("call-btn-helios").disabled = heliosNotified >= 1;
-    document.getElementById("call-btn-circus").disabled = circusNotified >= 1;
+    // Disable/enable Call buttons (logic removed to allow admin full control)
+    // document.getElementById("call-btn-helios").disabled = heliosNotified >= 1;
+    // document.getElementById("call-btn-circus").disabled = circusNotified >= 1;
   }
 
   init();

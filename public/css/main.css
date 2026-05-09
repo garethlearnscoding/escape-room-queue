@@ -139,13 +139,19 @@ html, body {
     font-size: 10px;
     width: auto;
     display: inline-block;
-    margin-left: 4px;
 }
 
 .btn-large {
     padding: 20px;
     font-size: 14px;
     font-weight: 600;
+}
+
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
 }
 
 /* ── APP SHELL ── */

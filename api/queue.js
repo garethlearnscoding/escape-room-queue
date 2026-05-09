@@ -38,30 +38,6 @@ module.exports = async (req, res) => {
   if (handleOptions(req, res)) return;
 
   try {
-    if (req.method === "OPTIONS") {
-      res.setHeader(
-        "Access-Control-Allow-Origin",
-        "https://escape-room.njcfuntasia.com"
-      );
-  
-      res.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET,POST,OPTIONS,PATCH,DELETE"
-      );
-  
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization"
-      );
-  
-      return res.status(200).end();
-    }
-  
-    // CORS headers for actual request
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      "https://escape-room.njcfuntasia.com"
-    );
     // ── GET ───────────────────────────────────────────────────
     if (req.method === "GET") {
 
@@ -205,27 +181,43 @@ module.exports = async (req, res) => {
       // All other actions require admin auth
       if (!await requireAdmin(req, res)) return;
 
-      // ── call: notify first waiting person in a specific theme ──
+      // ── call: notify a specific person or the first waiting person in a theme ──
       if (action === "call") {
+        const { id: targetId } = req.body || {};
         let theme;
+
         try { theme = validateTheme(rawTheme); }
         catch (err) { return res.status(400).json({ error: err.message }); }
 
         const active  = await getActive(theme);
-        const waiting = active.filter(e => e.status === "waiting");
+        let targetEntry;
 
-        if (waiting.length === 0) {
-          const alreadyCalled = active.some(e => e.status === "notified");
-          if (alreadyCalled)
-            return res.status(400).json({ error: `Someone from ${theme} is already being called.` });
-          return res.status(200).json({ message: "No one waiting", called: null });
+        if (rawId) {
+          // Admin chose a specific person
+          let id;
+          try { id = validateId(rawId); }
+          catch { return res.status(400).json({ error: "Invalid id" }); }
+
+          targetEntry = active.find(e => e.queue_number == id);
+          if (!targetEntry) {
+            return res.status(404).json({ error: "Person not found in active queue for this theme" });
+          }
+          if (targetEntry.status !== "waiting") {
+            return res.status(400).json({ error: "This person is already notified or served" });
+          }
+        } else {
+          // Admin clicked "Call Next" shortcut
+          const waiting = active.filter(e => e.status === "waiting");
+          if (waiting.length === 0) {
+            return res.status(200).json({ message: "No one waiting", called: null });
+          }
+          targetEntry = waiting[0];
         }
 
-        const next = waiting[0];
-        await updateStatus(next.queue_number, "notified", Date.now());
+        await updateStatus(targetEntry.queue_number, "notified", Date.now());
         return res.status(200).json({
-          called: next.name,
-          calledQueueNumber: next.queue_number,
+          called: targetEntry.name,
+          calledQueueNumber: targetEntry.queue_number,
           theme,
         });
       }
