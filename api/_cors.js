@@ -1,6 +1,6 @@
 function setCors(req, res) {
   const origin = req.headers.origin;
-  const ALLOWED_ORIGIN = "https://client.njcfuntasia.com";
+  const ALLOWED_ORIGIN = "https://escape-room.njcfuntasia.com";
   
   // If the request origin matches our allowed origin, or it's a browser check
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
