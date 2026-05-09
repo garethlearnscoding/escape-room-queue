@@ -1,8 +1,13 @@
 {
   "name": "escape-queue",
   "version": "1.0.0",
-  "scripts": { "build": "echo no build" },
+  "scripts": {
+    "build": "echo no build"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0"},
-  "engines": { "node": ">=18" }
+    "@supabase/supabase-js": "^2.105.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
